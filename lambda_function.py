@@ -59,7 +59,7 @@ def lambda_handler(event, context):
         # Anthropic APIに問い合わせ
         messages = format_conversation_for_anthropic(conversation_history, message)
         response = anthropic_client.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-5-sonnet-20240620",
             max_tokens=1024,
             messages=messages
         )
