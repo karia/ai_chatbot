@@ -2,6 +2,7 @@ import json
 import os
 import time
 import boto3
+from botocore.exceptions import ClientError
 from anthropic import Anthropic
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -53,7 +54,7 @@ def lambda_handler(event, context):
         # 仮のエントリをDynamoDBに保存
         if not save_initial_event(event_id, user_id, channel_id, thread_ts, message):
             print(f"Duplicate event detected: {event_id}")
-            return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
+            return {'statusCode': 200, 'body': json.dumps({'message': 'Duplicate event ignored'})}
 
         # Anthropic APIに問い合わせ
         messages = format_conversation_for_anthropic(conversation_history, message)
@@ -74,7 +75,6 @@ def lambda_handler(event, context):
             text=ai_response,
             thread_ts=thread_ts
         )
-
         # DynamoDBのエントリを更新
         update_event(event_id, ai_response)
 
@@ -83,6 +83,10 @@ def lambda_handler(event, context):
     except SlackApiError as e:
         print(f"Error sending message to Slack: {e}")
         return {'statusCode': 500, 'body': json.dumps({'error': 'Error sending message to Slack'})}
+    
+    except ClientError as e:
+        print(f"DynamoDB error: {e}")
+        return {'statusCode': 500, 'body': json.dumps({'error': 'DynamoDB operation failed'})}
     
     except Exception as e:
         print(f"Unexpected error: {e}")
@@ -105,7 +109,7 @@ def save_initial_event(event_id, user_id, channel_id, thread_ts, user_message):
         )
         print(f"Initial entry saved to DynamoDB: event_id={event_id}")
         return True
-    except boto3.exceptions.ClientError as e:
+    except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
             print(f"Duplicate event detected during initial save: {event_id}")
             return False
@@ -127,7 +131,7 @@ def update_event(event_id, ai_response):
             ConditionExpression=Attr('status').eq('processing')
         )
         print(f"Event updated in DynamoDB: event_id={event_id}")
-    except boto3.exceptions.ClientError as e:
+    except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
             print(f"Event already processed: {event_id}")
         else:
