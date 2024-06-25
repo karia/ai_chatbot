@@ -35,6 +35,7 @@ def lambda_handler(event, context):
     channel_id = slack_event['channel']
     user_id = slack_event['user']
     message = slack_event['text']
+    thread_ts = slack_event.get('thread_ts', slack_event['ts'])  # スレッドの親メッセージのタイムスタンプ
 
     # ユーザーメッセージからボットメンションを除去
     message = message.split('>', 1)[-1].strip()
@@ -57,10 +58,11 @@ def lambda_handler(event, context):
         # ログにAIの応答を出力
         print(f"AI response for user {user_id} in channel {channel_id}: {ai_response}")
 
-        # Slackにメッセージを送信
-        slack_client.chat_postMessage(
+        # Slackにメッセージを送信（スレッド内）
+        slack_response = slack_client.chat_postMessage(
             channel=channel_id,
-            text=f"<@{user_id}> {ai_response}"
+            text=ai_response,
+            thread_ts=thread_ts
         )
 
         # DynamoDBに会話を保存
@@ -70,13 +72,14 @@ def lambda_handler(event, context):
                 'user_id': user_id,
                 'timestamp': timestamp,
                 'channel_id': channel_id,
+                'thread_ts': thread_ts,
                 'user_message': message,
                 'ai_response': ai_response
             }
         )
 
         # ログにDynamoDBへの保存を記録
-        print(f"Conversation saved to DynamoDB: user_id={user_id}, timestamp={timestamp}")
+        print(f"Conversation saved to DynamoDB: user_id={user_id}, timestamp={timestamp}, thread_ts={thread_ts}")
 
         return {'statusCode': 200, 'body': 'OK'}
 
