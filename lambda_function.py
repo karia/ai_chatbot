@@ -125,15 +125,29 @@ def get_thread_history(channel_id, thread_ts):
 
 def format_conversation_for_anthropic(conversation_history, current_message):
     messages = []
+    last_role = None
     for msg in conversation_history:
-        if msg.get('bot_id'):
-            messages.append({"role": "assistant", "content": msg['text']})
+        role = "assistant" if msg.get('bot_id') else "user"
+        content = msg['text']
+        
+        # ユーザーメッセージからボットメンションを除去
+        if role == "user":
+            content = content.split('>', 1)[-1].strip()
+        
+        # 同じロールが連続する場合、内容を結合する
+        if role == last_role and messages:
+            messages[-1]["content"] += "\n" + content
         else:
-            messages.append({"role": "user", "content": msg['text']})
-    
-    # 現在のメッセージを追加
-    messages.append({"role": "user", "content": current_message})
-    
+            messages.append({"role": role, "content": content})
+        
+        last_role = role
+
+    # 現在のメッセージを追加（ただし、最後のメッセージがuserでない場合のみ）
+    if not messages or messages[-1]["role"] != "user":
+        messages.append({"role": "user", "content": current_message})
+    else:
+        messages[-1]["content"] += "\n" + current_message
+
     return messages
 
 def is_thread_message(slack_event, bot_user_id):
