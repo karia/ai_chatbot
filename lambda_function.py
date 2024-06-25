@@ -5,6 +5,7 @@ import boto3
 from anthropic import Anthropic
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from boto3.dynamodb.conditions import Key
 
 # 環境変数の設定
 ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
@@ -26,16 +27,23 @@ def lambda_handler(event, context):
         }
     
     # イベントの解析
-    slack_event = json.loads(event['body'])['event']
+    body = json.loads(event['body'])
+    slack_event = body['event']
+    event_id = body['event_id']
     
     # メンション以外のメッセージは無視
     if slack_event['type'] != 'app_mention':
         return {'statusCode': 200, 'body': 'OK'}
 
+    # イベントの重複チェック
+    if is_duplicate_event(event_id):
+        print(f"Duplicate event detected: {event_id}")
+        return {'statusCode': 200, 'body': 'OK'}
+
     channel_id = slack_event['channel']
     user_id = slack_event['user']
     message = slack_event['text']
-    thread_ts = slack_event.get('thread_ts', slack_event['ts'])  # スレッドの親メッセージのタイムスタンプ
+    thread_ts = slack_event.get('thread_ts', slack_event['ts'])
 
     # ユーザーメッセージからボットメンションを除去
     message = message.split('>', 1)[-1].strip()
@@ -74,12 +82,13 @@ def lambda_handler(event, context):
                 'channel_id': channel_id,
                 'thread_ts': thread_ts,
                 'user_message': message,
-                'ai_response': ai_response
+                'ai_response': ai_response,
+                'event_id': event_id
             }
         )
 
         # ログにDynamoDBへの保存を記録
-        print(f"Conversation saved to DynamoDB: user_id={user_id}, timestamp={timestamp}, thread_ts={thread_ts}")
+        print(f"Conversation saved to DynamoDB: user_id={user_id}, timestamp={timestamp}, thread_ts={thread_ts}, event_id={event_id}")
 
         return {'statusCode': 200, 'body': 'OK'}
 
@@ -90,3 +99,9 @@ def lambda_handler(event, context):
     except Exception as e:
         print(f"Unexpected error: {e}")
         return {'statusCode': 500, 'body': 'Internal Server Error'}
+
+def is_duplicate_event(event_id):
+    response = table.query(
+        KeyConditionExpression=Key('event_id').eq(event_id)
+    )
+    return len(response['Items']) > 0
