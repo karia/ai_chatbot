@@ -5,7 +5,7 @@ import boto3
 from anthropic import Anthropic
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 
 # 環境変数の設定
 ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
@@ -33,12 +33,7 @@ def lambda_handler(event, context):
     
     # app_mentionイベント以外は無視
     if slack_event['type'] != 'app_mention':
-        return {'statusCode': 200, 'body': 'OK'}
-
-    # イベントの重複チェック
-    if is_duplicate_event(event_id):
-        print(f"Duplicate event detected: {event_id}")
-        return {'statusCode': 200, 'body': 'OK'}
+        return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
 
     channel_id = slack_event['channel']
     user_id = slack_event['user']
@@ -55,6 +50,11 @@ def lambda_handler(event, context):
     print(f"Received question from user {user_id} in channel {channel_id}: {message}")
 
     try:
+        # 仮のエントリをDynamoDBに保存
+        if not save_initial_event(event_id, user_id, channel_id, thread_ts, message):
+            print(f"Duplicate event detected: {event_id}")
+            return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
+
         # Anthropic APIに問い合わせ
         messages = format_conversation_for_anthropic(conversation_history, message)
         response = anthropic_client.messages.create(
@@ -75,38 +75,63 @@ def lambda_handler(event, context):
             thread_ts=thread_ts
         )
 
-        # DynamoDBに会話を保存
-        timestamp = int(time.time() * 1000)
+        # DynamoDBのエントリを更新
+        update_event(event_id, ai_response)
+
+        return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
+
+    except SlackApiError as e:
+        print(f"Error sending message to Slack: {e}")
+        return {'statusCode': 500, 'body': json.dumps({'error': 'Error sending message to Slack'})}
+    
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {'statusCode': 500, 'body': json.dumps({'error': 'Internal Server Error'})}
+
+def save_initial_event(event_id, user_id, channel_id, thread_ts, user_message):
+    timestamp = int(time.time() * 1000)
+    try:
         table.put_item(
             Item={
+                'event_id': event_id,
                 'user_id': user_id,
                 'timestamp': timestamp,
                 'channel_id': channel_id,
                 'thread_ts': thread_ts,
-                'user_message': message,
-                'ai_response': ai_response,
-                'event_id': event_id
-            }
+                'user_message': user_message,
+                'status': 'processing'
+            },
+            ConditionExpression='attribute_not_exists(event_id)'
         )
+        print(f"Initial entry saved to DynamoDB: event_id={event_id}")
+        return True
+    except boto3.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            print(f"Duplicate event detected during initial save: {event_id}")
+            return False
+        else:
+            raise
 
-        # ログにDynamoDBへの保存を記録
-        print(f"Conversation saved to DynamoDB: user_id={user_id}, timestamp={timestamp}, thread_ts={thread_ts}, event_id={event_id}")
-
-        return {'statusCode': 200, 'body': 'OK'}
-
-    except SlackApiError as e:
-        print(f"Error sending message to Slack: {e}")
-        return {'statusCode': 500, 'body': 'Error sending message to Slack'}
-    
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        return {'statusCode': 500, 'body': 'Internal Server Error'}
-
-def is_duplicate_event(event_id):
-    response = table.query(
-        KeyConditionExpression=Key('event_id').eq(event_id)
-    )
-    return len(response['Items']) > 0
+def update_event(event_id, ai_response):
+    try:
+        table.update_item(
+            Key={'event_id': event_id},
+            UpdateExpression="set ai_response = :r, #s = :c",
+            ExpressionAttributeValues={
+                ':r': ai_response,
+                ':c': 'completed'
+            },
+            ExpressionAttributeNames={
+                '#s': 'status'
+            },
+            ConditionExpression=Attr('status').eq('processing')
+        )
+        print(f"Event updated in DynamoDB: event_id={event_id}")
+    except boto3.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            print(f"Event already processed: {event_id}")
+        else:
+            raise
 
 def get_thread_history(channel_id, thread_ts):
     try:
