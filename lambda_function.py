@@ -20,41 +20,41 @@ dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(DYNAMODB_TABLE_NAME)
 
 def lambda_handler(event, context):
-    # Slack Event APIからのチャレンジレスポンスの処理
-    if 'challenge' in event['body']:
-        return {
-            'statusCode': 200,
-            'body': json.loads(event['body'])['challenge']
-        }
-    
-    # イベントの解析
-    body = json.loads(event['body'])
-    slack_event = body['event']
-    event_id = body['event_id']
-    
-    # app_mentionイベント以外は無視
-    if slack_event['type'] != 'app_mention':
-        return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
-
-    channel_id = slack_event['channel']
-    user_id = slack_event['user']
-    message = slack_event['text']
-    thread_ts = slack_event.get('thread_ts', slack_event['ts'])
-
-    # メッセージからボットメンションを除去
-    message = message.split('>', 1)[-1].strip()
-
-    # スレッドの会話履歴を取得
-    conversation_history = get_thread_history(channel_id, thread_ts)
-
-    # ログに質問を出力
-    print(f"Received question from user {user_id} in channel {channel_id}: {message}")
-
     try:
+        # Slack Event APIからのチャレンジレスポンスの処理
+        if 'challenge' in event['body']:
+            return {
+                'statusCode': 200,
+                'body': json.loads(event['body'])['challenge']
+            }
+        
+        # イベントの解析
+        body = json.loads(event['body'])
+        slack_event = body['event']
+        event_id = body['event_id']
+        
+        # app_mentionイベント以外は無視
+        if slack_event['type'] != 'app_mention':
+            return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
+
+        channel_id = slack_event['channel']
+        user_id = slack_event['user']
+        message = slack_event['text']
+        thread_ts = slack_event.get('thread_ts', slack_event['ts'])
+
         # 仮のエントリをDynamoDBに保存
         if not save_initial_event(event_id, user_id, channel_id, thread_ts, message):
             print(f"Duplicate event detected: {event_id}")
             return {'statusCode': 200, 'body': json.dumps({'message': 'Duplicate event ignored'})}
+
+        # メッセージからボットメンションを除去
+        message = message.split('>', 1)[-1].strip()
+
+        # スレッドの会話履歴を取得
+        conversation_history = get_thread_history(channel_id, thread_ts)
+
+        # ログに質問を出力
+        print(f"Received question from user {user_id} in channel {channel_id}: {message}")
 
         # Anthropic APIに問い合わせ
         messages = format_conversation_for_anthropic(conversation_history, message)
