@@ -31,8 +31,11 @@ def lambda_handler(event, context):
     slack_event = body['event']
     event_id = body['event_id']
     
-    # メンション以外のメッセージは無視
-    if slack_event['type'] != 'app_mention':
+    # ボットのuser_idを取得
+    bot_user_id = body.get('authorizations', [{}])[0].get('user_id')
+    
+    # メンション以外のメッセージ、またはスレッド内のメッセージを処理
+    if slack_event['type'] != 'app_mention' and not is_thread_message(slack_event, bot_user_id):
         return {'statusCode': 200, 'body': 'OK'}
 
     # イベントの重複チェック
@@ -45,8 +48,9 @@ def lambda_handler(event, context):
     message = slack_event['text']
     thread_ts = slack_event.get('thread_ts', slack_event['ts'])
 
-    # ユーザーメッセージからボットメンションを除去
-    message = message.split('>', 1)[-1].strip()
+    # メッセージからボットメンションを除去（スレッド内のメッセージの場合は不要）
+    if slack_event['type'] == 'app_mention':
+        message = message.split('>', 1)[-1].strip()
 
     # スレッドの会話履歴を取得
     conversation_history = get_thread_history(channel_id, thread_ts)
@@ -131,3 +135,6 @@ def format_conversation_for_anthropic(conversation_history, current_message):
     messages.append({"role": "user", "content": current_message})
     
     return messages
+
+def is_thread_message(slack_event, bot_user_id):
+    return 'thread_ts' in slack_event and slack_event.get('user') != bot_user_id
