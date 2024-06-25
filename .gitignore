@@ -162,3 +162,4 @@ cython_debug/
 #.idea/
 
 package/
+my_deployment_package.zip
