@@ -48,17 +48,19 @@ def lambda_handler(event, context):
     # ユーザーメッセージからボットメンションを除去
     message = message.split('>', 1)[-1].strip()
 
+    # スレッドの会話履歴を取得
+    conversation_history = get_thread_history(channel_id, thread_ts)
+
     # ログに質問を出力
     print(f"Received question from user {user_id} in channel {channel_id}: {message}")
 
     try:
         # Anthropic APIに問い合わせ
+        messages = format_conversation_for_anthropic(conversation_history, message)
         response = anthropic_client.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1024,
-            messages=[
-                {"role": "user", "content": message}
-            ]
+            messages=messages
         )
         
         ai_response = response.content[0].text
@@ -105,3 +107,27 @@ def is_duplicate_event(event_id):
         KeyConditionExpression=Key('event_id').eq(event_id)
     )
     return len(response['Items']) > 0
+
+def get_thread_history(channel_id, thread_ts):
+    try:
+        response = slack_client.conversations_replies(
+            channel=channel_id,
+            ts=thread_ts
+        )
+        return response['messages']
+    except SlackApiError as e:
+        print(f"Error fetching thread history: {e}")
+        return []
+
+def format_conversation_for_anthropic(conversation_history, current_message):
+    messages = []
+    for msg in conversation_history:
+        if msg.get('bot_id'):
+            messages.append({"role": "assistant", "content": msg['text']})
+        else:
+            messages.append({"role": "user", "content": msg['text']})
+    
+    # 現在のメッセージを追加
+    messages.append({"role": "user", "content": current_message})
+    
+    return messages
