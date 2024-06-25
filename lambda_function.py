@@ -70,11 +70,12 @@ def lambda_handler(event, context):
         print(f"AI response for user {user_id} in channel {channel_id}: {ai_response}")
 
         # Slackにメッセージを送信（スレッド内）
-        slack_response = slack_client.chat_postMessage(
+        slack_client.chat_postMessage(
             channel=channel_id,
             text=ai_response,
             thread_ts=thread_ts
         )
+
         # DynamoDBのエントリを更新
         update_event(event_id, ai_response)
 
