@@ -1,9 +1,11 @@
 import boto3
 import time
+import logging
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Attr
 from config import DYNAMODB_TABLE_NAME
 
+logger = logging.getLogger()
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(DYNAMODB_TABLE_NAME)
 
@@ -22,11 +24,11 @@ def save_initial_event(event_id, user_id, channel_id, thread_ts, user_message):
             },
             ConditionExpression='attribute_not_exists(event_id)'
         )
-        print(f"Initial entry saved to DynamoDB: event_id={event_id}")
+        logger.info(f"Initial entry saved to DynamoDB: event_id={event_id}")
         return True
     except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-            print(f"Duplicate event detected during initial save: {event_id}")
+            logger.info(f"Duplicate event detected during initial save: {event_id}")
             return False
         else:
             raise
@@ -45,9 +47,9 @@ def update_event(event_id, ai_response):
             },
             ConditionExpression=Attr('status').eq('processing')
         )
-        print(f"Event updated in DynamoDB: event_id={event_id}")
+        logger.info(f"Event updated in DynamoDB: event_id={event_id}")
     except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-            print(f"Event already processed: {event_id}")
+            logger.info(f"Event already processed: {event_id}")
         else:
             raise

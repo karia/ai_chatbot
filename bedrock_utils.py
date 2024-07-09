@@ -1,7 +1,9 @@
 import boto3
 import json
+import logging
 from botocore.exceptions import ClientError
 
+logger = logging.getLogger()
 bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
 
 def invoke_claude_model(messages):
@@ -20,11 +22,11 @@ def invoke_claude_model(messages):
         response_body = json.loads(response['body'].read())
         return response_body['content'][0]['text']
     except ClientError as e:
-        print(f"Error invoking Bedrock model: {e}")
+        logger.error(f"Error invoking Bedrock model: {e}")
         error_message = str(e)
         if 'ValidationException' in error_message:
-            print("Validation error. Check the format of the messages.")
-            print(f"Messages: {json.dumps(messages, indent=2)}")
+            logger.error("Validation error. Check the format of the messages.")
+            logger.error(f"Messages: {json.dumps(messages, indent=2)}")
         raise
 
 def format_conversation_for_claude(conversation_history, current_message):

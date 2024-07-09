@@ -1,21 +1,24 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import logging
+
+logger = logging.getLogger()
 
 def get_url_content(url):
     try:
         # URLから余分な文字（< >）を削除
         url = url.strip('<>')
-        print(f"Attempting to fetch content from URL: {url}")  # URLのログ出力
+        logger.info(f"Attempting to fetch content from URL: {url}")
         
         response = requests.get(url)
-        print(f"Response status code: {response.status_code}")  # ステータスコードのログ出力
+        logger.info(f"Response status code: {response.status_code}")
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
         # メタデータの取得
         title = soup.title.string if soup.title else "No title found"
-        print(f"Title: {title}")  # タイトルのログ出力
+        logger.info(f"Title: {title}")
         
         # body タグ内の全てのテキストを取得
         body = soup.body
@@ -30,18 +33,18 @@ def get_url_content(url):
         # 不要な空白文字の削除
         content = re.sub(r'\s+', ' ', content).strip()
         
-        print(f"Content length: {len(content)} characters")  # コンテンツ長のログ出力
-        print(f"Content preview: {content[:200]}...")  # コンテンツプレビューのログ出力
+        logger.info(f"Content length: {len(content)} characters")
+        logger.info(f"Content preview: {content[:200]}...")
         
         return title, content
     except requests.RequestException as e:
         error_message = f"Error fetching URL content: {str(e)}"
-        print(error_message)  # エラーメッセージのログ出力
-        return "エラー", error_message
+        logger.error(error_message)
+        return "Error", error_message
     except Exception as e:
         error_message = f"Unexpected error while fetching URL content: {str(e)}"
-        print(error_message)  # エラーメッセージのログ出力
-        return "エラー", error_message
+        logger.error(error_message)
+        return "Error", error_message
 
 def prepare_summary_prompt(url_content):
     title, content = url_content

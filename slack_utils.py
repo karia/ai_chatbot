@@ -1,7 +1,9 @@
+import logging
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from config import SLACK_BOT_TOKEN
 
+logger = logging.getLogger()
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
 
 def handle_slack_event(slack_event):
@@ -23,7 +25,7 @@ def get_thread_history(channel_id, thread_ts):
         )
         return response['messages']
     except SlackApiError as e:
-        print(f"Error fetching thread history: {e}")
+        logger.error(f"Error fetching thread history: {e}")
         return []
 
 def send_slack_message(channel_id, text, thread_ts):
@@ -34,6 +36,5 @@ def send_slack_message(channel_id, text, thread_ts):
             thread_ts=thread_ts
         )
     except SlackApiError as e:
-        print(f"Error sending message to Slack: {e}")
+        logger.error(f"Error sending message to Slack: {e}")
         raise
-    
