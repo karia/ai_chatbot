@@ -1,0 +1,4 @@
+import os
+
+SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
+DYNAMODB_TABLE_NAME = os.environ['DYNAMODB_TABLE_NAME']
