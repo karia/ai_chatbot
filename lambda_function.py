@@ -1,7 +1,7 @@
 import json
 from slack_utils import handle_slack_event, send_slack_message, get_thread_history
 from dynamodb_utils import save_initial_event, update_event
-from bedrock_utils import invoke_claude_model, format_conversation_for_bedrock
+from bedrock_utils import invoke_claude_model, format_conversation_for_claude
 from url_utils import get_url_content, prepare_summary_prompt
 from utils import create_error_message, extract_url
 from config import DYNAMODB_TABLE_NAME
@@ -51,7 +51,7 @@ def lambda_handler(event, context):
                 else:
                     # URLの内容をメッセージに付加
                     enriched_message = f"{message}\n\nURL内容：\n{url_content}"
-                    messages = format_conversation_for_bedrock(conversation_history, enriched_message)
+                    messages = format_conversation_for_claude(conversation_history, enriched_message)
                     ai_response = invoke_claude_model(messages)
                     response = ai_response
             except Exception as e:
@@ -60,7 +60,7 @@ def lambda_handler(event, context):
                 response = error_message
         else:
             # 通常のClaude対話処理
-            messages = format_conversation_for_bedrock(conversation_history, message)
+            messages = format_conversation_for_claude(conversation_history, message)
             ai_response = invoke_claude_model(messages)
             response = ai_response
 

@@ -27,29 +27,31 @@ def invoke_claude_model(messages):
             print(f"Messages: {json.dumps(messages, indent=2)}")
         raise
 
-def format_conversation_for_bedrock(conversation_history, current_message):
-    messages = []
-    last_role = None
+def format_conversation_for_claude(conversation_history, current_message):
+    formatted_messages = []
+    current_role = None
+    current_content = []
+
     for msg in conversation_history:
         role = "assistant" if msg.get('bot_id') else "user"
         content = msg['text']
-        
-        # ユーザーメッセージからボットメンションを除去
-        if role == "user":
-            content = content.split('>', 1)[-1].strip()
-        
-        # 同じロールが連続する場合、内容を結合する
-        if role == last_role and messages:
-            messages[-1]["content"] += "\n" + content
+
+        if role == current_role:
+            current_content.append(content)
         else:
-            messages.append({"role": role, "content": content})
-        
-        last_role = role
+            if current_role:
+                formatted_messages.append({"role": current_role, "content": "\n".join(current_content)})
+            current_role = role
+            current_content = [content]
 
-    # 現在のメッセージを追加（ただし、最後のメッセージがuserでない場合のみ）
-    if not messages or messages[-1]["role"] != "user":
-        messages.append({"role": "user", "content": current_message})
+    # Add the last message from the conversation history
+    if current_role:
+        formatted_messages.append({"role": current_role, "content": "\n".join(current_content)})
+
+    # Add the current message
+    if formatted_messages and formatted_messages[-1]["role"] == "user":
+        formatted_messages[-1]["content"] += f"\n{current_message}"
     else:
-        messages[-1]["content"] += "\n" + current_message
+        formatted_messages.append({"role": "user", "content": current_message})
 
-    return messages
+    return formatted_messages
