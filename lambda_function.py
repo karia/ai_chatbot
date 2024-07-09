@@ -3,21 +3,19 @@ import os
 import time
 import boto3
 from botocore.exceptions import ClientError
-from anthropic import Anthropic
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from boto3.dynamodb.conditions import Key, Attr
 
 # 環境変数の設定
-ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
 SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
 DYNAMODB_TABLE_NAME = os.environ['DYNAMODB_TABLE_NAME']
 
 # クライアントの初期化
-anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(DYNAMODB_TABLE_NAME)
+bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
 
 def lambda_handler(event, context):
     try:
@@ -56,15 +54,9 @@ def lambda_handler(event, context):
         # ログに質問を出力
         print(f"Received question from user {user_id} in channel {channel_id}: {message}")
 
-        # Anthropic APIに問い合わせ
-        messages = format_conversation_for_anthropic(conversation_history, message)
-        response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20240620",
-            max_tokens=1024,
-            messages=messages
-        )
-        
-        ai_response = response.content[0].text
+        # Amazon Bedrock経由でClaudeに問い合わせ
+        messages = format_conversation_for_bedrock(conversation_history, message)
+        ai_response = invoke_claude_model(messages)
 
         # ログにAIの応答を出力
         print(f"AI response for user {user_id} in channel {channel_id}: {ai_response}")
@@ -86,8 +78,8 @@ def lambda_handler(event, context):
         return {'statusCode': 500, 'body': json.dumps({'error': 'Error sending message to Slack'})}
     
     except ClientError as e:
-        print(f"DynamoDB error: {e}")
-        return {'statusCode': 500, 'body': json.dumps({'error': 'DynamoDB operation failed'})}
+        print(f"AWS service error: {e}")
+        return {'statusCode': 500, 'body': json.dumps({'error': 'AWS service operation failed'})}
     
     except Exception as e:
         print(f"Unexpected error: {e}")
@@ -149,7 +141,30 @@ def get_thread_history(channel_id, thread_ts):
         print(f"Error fetching thread history: {e}")
         return []
 
-def format_conversation_for_anthropic(conversation_history, current_message):
+def invoke_claude_model(messages):
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 1024,
+        "messages": messages
+    })
+    
+    try:
+        response = bedrock_runtime.invoke_model(
+            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            body=body
+        )
+        
+        response_body = json.loads(response['body'].read())
+        return response_body['content'][0]['text']
+    except ClientError as e:
+        print(f"Error invoking Bedrock model: {e}")
+        error_message = str(e)
+        if 'ValidationException' in error_message:
+            print("Validation error. Check the format of the messages.")
+            print(f"Messages: {json.dumps(messages, indent=2)}")
+        raise
+
+def format_conversation_for_bedrock(conversation_history, current_message):
     messages = []
     last_role = None
     for msg in conversation_history:
