@@ -53,8 +53,3 @@ def format_conversation_for_bedrock(conversation_history, current_message):
         messages[-1]["content"] += "\n" + current_message
 
     return messages
-
-def generate_summary(url_content):
-    prompt = f"以下のウェブコンテンツを簡潔に要約してください：\n\n{url_content}"
-    messages = [{"role": "user", "content": prompt}]
-    return invoke_claude_model(messages)
