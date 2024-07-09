@@ -1,7 +1,9 @@
 import json
+import re
 from slack_utils import handle_slack_event, send_slack_message, get_thread_history
 from dynamodb_utils import save_initial_event, update_event
-from bedrock_utils import invoke_claude_model, format_conversation_for_bedrock
+from bedrock_utils import invoke_claude_model, format_conversation_for_bedrock, generate_summary
+from url_utils import get_url_content, prepare_summary_prompt
 from config import DYNAMODB_TABLE_NAME
 
 def lambda_handler(event, context):
@@ -36,18 +38,33 @@ def lambda_handler(event, context):
         # ログに質問を出力
         print(f"Received question from user {user_id} in channel {channel_id}: {message}")
 
-        # Amazon Bedrock経由でClaudeに問い合わせ
-        messages = format_conversation_for_bedrock(conversation_history, message)
-        ai_response = invoke_claude_model(messages)
+        # URLが含まれているかチェック
+        if "http://" in message or "https://" in message:
+            # URLを抽出し、余分な文字を削除
+            url = re.search(r'(https?://\S+)', message).group(1).strip('<>')
+            print(f"Extracted URL: {url}")  # 抽出したURLのログ出力
+            url_content = get_url_content(url)
+            print(f"URL content: {url_content}")  # URL内容のログ出力
+            summary_prompt = prepare_summary_prompt(url_content)
+            print(f"Summary prompt: {summary_prompt}")  # サマリープロンプトのログ出力
+            ai_response = generate_summary(summary_prompt)
+            print(f"AI response: {ai_response}")  # AI応答のログ出力
+            
+            response = f"ウェブページの要約は以下の通りです：\n\n{ai_response}"
+        else:
+            # 既存のClaude対話処理
+            messages = format_conversation_for_bedrock(conversation_history, message)
+            ai_response = invoke_claude_model(messages)
+            response = ai_response
 
         # ログにAIの応答を出力
-        print(f"AI response for user {user_id} in channel {channel_id}: {ai_response}")
+        print(f"AI response for user {user_id} in channel {channel_id}: {response}")
 
         # Slackにメッセージを送信（スレッド内）
-        send_slack_message(channel_id, ai_response, thread_ts)
+        send_slack_message(channel_id, response, thread_ts)
 
         # DynamoDBのエントリを更新
-        update_event(event_id, ai_response)
+        update_event(event_id, response)
 
         return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
 
