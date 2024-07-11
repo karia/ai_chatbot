@@ -1,10 +1,20 @@
 import boto3
 import json
 import logging
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
-bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+
+# カスタムリトライ設定
+custom_retry_config = Config(
+    retries={
+        'max_attempts': 8,
+        'mode': 'adaptive'
+    }
+)
+
+bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1', config=custom_retry_config)
 
 def invoke_claude_model(messages):
     body = json.dumps({
@@ -22,12 +32,16 @@ def invoke_claude_model(messages):
         response_body = json.loads(response['body'].read())
         return response_body['content'][0]['text']
     except ClientError as e:
-        logger.error(f"Error invoking Bedrock model: {e}")
-        error_message = str(e)
-        if 'ValidationException' in error_message:
-            logger.error("Validation error. Check the format of the messages.")
-            logger.error(f"Messages: {json.dumps(messages, indent=2)}")
+        if e.response['Error']['Code'] == 'ThrottlingException':
+            logger.warning("ThrottlingException occurred. Consider implementing a backoff strategy or reducing request frequency.")
+        else:
+            logger.error(f"Error invoking Bedrock model: {e}")
+            if 'ValidationException' in str(e):
+                logger.error("Validation error. Check the format of the messages.")
+                logger.error(f"Messages: {json.dumps(messages, indent=2)}")
         raise
+
+    raise Exception("Failed to invoke Bedrock model")
 
 def format_conversation_for_claude(conversation_history, current_message):
     formatted_messages = []
