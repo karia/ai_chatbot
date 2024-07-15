@@ -3,7 +3,7 @@ import logging
 from slack_utils import handle_slack_event, send_slack_message, get_thread_history
 from dynamodb_utils import save_initial_event, update_event
 from bedrock_utils import invoke_claude_model, format_conversation_for_claude
-from url_utils import get_url_content, prepare_summary_prompt
+from url_utils import get_url_content
 from utils import create_error_message, extract_url
 from config import DYNAMODB_TABLE_NAME
 
@@ -51,17 +51,13 @@ def lambda_handler(event, context):
 
         if url:
             try:
-                url_content = get_url_content(url)
+                url_title,url_content = get_url_content(url)
                 
                 # URLのみの場合とそうでない場合で処理を分ける
                 if message.strip() == f"<{url}>":
-                    summary_prompt = prepare_summary_prompt(url_content)
-                    messages, _ = format_conversation_for_claude([], summary_prompt)
-                    ai_response = invoke_claude_model(messages)
-                    response = f"ウェブページの要約は以下の通りです：\n\n{ai_response}"
+                    append_message = f"上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです；」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
                 else:
-                    # URLの内容をメッセージに付加
-                    append_message = f"URL内容：\n{url_content}"
+                    append_message = f"以下はURLの内容です：\n\nタイトル:{url_title}\n本文:{url_content}"
             except Exception as e:
                 error_message = create_error_message("URL処理", str(e))
                 logger.error(error_message)

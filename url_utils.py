@@ -45,14 +45,3 @@ def get_url_content(url):
         error_message = f"Unexpected error while fetching URL content: {str(e)}"
         logger.error(error_message)
         return "Error", error_message
-
-def prepare_summary_prompt(url_content):
-    title, content = url_content
-    
-    # プロンプトの最大長を設定（例：8000文字）
-    max_prompt_length = 8000
-    
-    if len(content) > max_prompt_length - len(title) - 100:  # 100は余裕を持たせる
-        content = content[:max_prompt_length - len(title) - 100] + "..."
-    
-    return f"以下のウェブページの内容を簡潔に要約してください：\n\nタイトル：{title}\n\n内容：{content}"
