@@ -28,7 +28,9 @@ def invoke_claude_model(messages):
             modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
             body=body
         )
-        
+        # debug log
+        logger.info(f"Messages: {json.dumps(messages, indent=2)}")
+
         response_body = json.loads(response['body'].read())
         return response_body['content'][0]['text']
     except ClientError as e:
@@ -38,40 +40,38 @@ def invoke_claude_model(messages):
             logger.error(f"Error invoking Bedrock model: {e}")
             if 'ValidationException' in str(e):
                 logger.error("Validation error. Check the format of the messages.")
-                logger.error(f"Messages: {json.dumps(messages, indent=2)}")
         raise
 
     raise Exception("Failed to invoke Bedrock model")
 
-def format_conversation_for_claude(conversation_history, current_message):
+def format_conversation_for_claude(conversation_history, append_message=None):
     formatted_messages = []
-    current_role = None
-    current_content = []
     assistant_response_count = 0
+    last_role = None
 
     for msg in conversation_history:
         role = "assistant" if msg.get('bot_id') else "user"
         content = msg['text']
 
+        # ボットメンションを除去（Slackの履歴にはメンションが含まれている可能性があるため）
+        if role == "user":
+            content = content.split('>', 1)[-1].strip()
+
         if role == "assistant":
             assistant_response_count += 1
 
-        if role == current_role:
-            current_content.append(content)
+        # 同じロールが連続する場合、内容を結合する
+        if role == last_role and formatted_messages:
+            formatted_messages[-1]["content"] += f"\n{content}"
         else:
-            if current_role:
-                formatted_messages.append({"role": current_role, "content": "\n".join(current_content)})
-            current_role = role
-            current_content = [content]
+            formatted_messages.append({"role": role, "content": content})
+            last_role = role
 
-    # Add the last message from the conversation history
-    if current_role:
-        formatted_messages.append({"role": current_role, "content": "\n".join(current_content)})
-
-    # Add the current message
-    if formatted_messages and formatted_messages[-1]["role"] == "user":
-        formatted_messages[-1]["content"] += f"\n{current_message}"
-    else:
-        formatted_messages.append({"role": "user", "content": current_message})
+    # append_message が指定されている場合、最後のメッセージとして追加
+    if append_message:
+        if formatted_messages and formatted_messages[-1]["role"] == "user":
+            formatted_messages[-1]["content"] += f"\n{append_message}"
+        else:
+            formatted_messages.append({"role": "user", "content": append_message})
 
     return formatted_messages, assistant_response_count
