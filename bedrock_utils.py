@@ -47,10 +47,14 @@ def format_conversation_for_claude(conversation_history, current_message):
     formatted_messages = []
     current_role = None
     current_content = []
+    assistant_response_count = 0
 
     for msg in conversation_history:
         role = "assistant" if msg.get('bot_id') else "user"
         content = msg['text']
+
+        if role == "assistant":
+            assistant_response_count += 1
 
         if role == current_role:
             current_content.append(content)
@@ -70,4 +74,4 @@ def format_conversation_for_claude(conversation_history, current_message):
     else:
         formatted_messages.append({"role": "user", "content": current_message})
 
-    return formatted_messages
+    return formatted_messages, assistant_response_count

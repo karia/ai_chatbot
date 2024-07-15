@@ -53,24 +53,32 @@ def lambda_handler(event, context):
                 # URLのみの場合とそうでない場合で処理を分ける
                 if message.strip() == f"<{url}>":
                     summary_prompt = prepare_summary_prompt(url_content)
-                    messages = [{"role": "user", "content": summary_prompt}]
+                    messages, _ = format_conversation_for_claude([], summary_prompt)
                     ai_response = invoke_claude_model(messages)
                     response = f"ウェブページの要約は以下の通りです：\n\n{ai_response}"
                 else:
                     # URLの内容をメッセージに付加
                     enriched_message = f"{message}\n\nURL内容：\n{url_content}"
-                    messages = format_conversation_for_claude(conversation_history, enriched_message)
-                    ai_response = invoke_claude_model(messages)
-                    response = ai_response
+                    messages, assistant_response_count = format_conversation_for_claude(conversation_history, enriched_message)
+                    
+                    if assistant_response_count >= 50:
+                        response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
+                    else:
+                        ai_response = invoke_claude_model(messages)
+                        response = ai_response
             except Exception as e:
                 error_message = create_error_message("URL処理", str(e))
                 logger.error(error_message)
                 response = error_message
         else:
             # 通常のClaude対話処理
-            messages = format_conversation_for_claude(conversation_history, message)
-            ai_response = invoke_claude_model(messages)
-            response = ai_response
+            messages, assistant_response_count = format_conversation_for_claude(conversation_history, message)
+            
+            if assistant_response_count >= 50:
+                response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
+            else:
+                ai_response = invoke_claude_model(messages)
+                response = ai_response
 
         # AIの応答をログに記録
         logger.info(f"AI response: {response}")
