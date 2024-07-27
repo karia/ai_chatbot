@@ -13,6 +13,9 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     try:
+        # デバッグ: リクエスト全体をログに出力
+        logger.info(f"Received event: {json.dumps(event, indent=2)}")
+
         # Slack Event APIからのチャレンジレスポンスの処理
         if 'challenge' in event['body']:
             return {
@@ -24,6 +27,9 @@ def lambda_handler(event, context):
         body = json.loads(event['body'])
         slack_event = body['event']
         event_id = body['event_id']
+
+        # デバッグ: パースされたbodyをログに出力
+        logger.info(f"Parsed body: {json.dumps(body, indent=2)}")
         
         # app_mentionイベント以外は無視
         if slack_event['type'] != 'app_mention':
