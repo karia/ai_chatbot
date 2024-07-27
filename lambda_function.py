@@ -53,12 +53,11 @@ def lambda_handler(event, context):
         logger.info(f"Thread history: {json.dumps(conversation_history, indent=2)}")
 
         # 最新のメッセージを除外（handle_slack_eventで既に処理済み）
-        latest_message = conversation_history.pop()
+        conversation_history = conversation_history[:-1]
 
         # URLの抽出
-        url = extract_url(latest_message['text'])
+        url = extract_url(message)
 
-        append_message = None
         response = None
 
         if url:
@@ -66,19 +65,16 @@ def lambda_handler(event, context):
                 url_title, url_content = get_url_content(url)
                 
                 # URLのみの場合とそうでない場合で処理を分ける
-                if latest_message['text'].strip() == f"<{url}>":
-                    append_message = f"上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです；」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
+                if message.strip() == f"<{url}>":
+                    message += f"\n\n上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです：」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
                 else:
-                    append_message = f"URLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
+                    message += f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
             except Exception as e:
-                    logger.error(f"Error processing URL {url}: {str(e)}")
-                    append_message = f"【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
+                logger.error(f"Error processing URL {url}: {str(e)}")
+                message += f"【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
 
-        messages, assistant_response_count = format_conversation_for_claude(conversation_history, append_message)
-        
-        # 最新のメッセージを追加
-        messages.append({"role": "user", "content": latest_message['text']})
-        
+        messages, assistant_response_count = format_conversation_for_claude(conversation_history, message)
+
         if assistant_response_count >= 50:
             response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
         else:

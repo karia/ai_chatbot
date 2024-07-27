@@ -23,14 +23,15 @@ def invoke_claude_model(messages):
         "max_tokens": AI_MODEL_MAX_TOKENS,
         "messages": messages
     })
-    
+
+    # debug log
+    logger.info(f"Messages: {json.dumps(messages, indent=2)}")
+
     try:
         response = bedrock_runtime.invoke_model(
             modelId=AI_MODEL_ID,
             body=body
         )
-        # debug log
-        logger.info(f"Messages: {json.dumps(messages, indent=2)}")
 
         response_body = json.loads(response['body'].read())
         return response_body['content'][0]['text']
