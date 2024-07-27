@@ -13,6 +13,9 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     try:
+        # デバッグ: リクエスト全体をログに出力
+        logger.info(f"Received event: {json.dumps(event, indent=2)}")
+
         # Slack Event APIからのチャレンジレスポンスの処理
         if 'challenge' in event['body']:
             return {
@@ -24,6 +27,9 @@ def lambda_handler(event, context):
         body = json.loads(event['body'])
         slack_event = body['event']
         event_id = body['event_id']
+
+        # デバッグ: パースされたbodyをログに出力
+        logger.info(f"Parsed body: {json.dumps(body, indent=2)}")
         
         # app_mentionイベント以外は無視
         if slack_event['type'] != 'app_mention':
@@ -42,6 +48,12 @@ def lambda_handler(event, context):
 
         # スレッドの会話履歴を取得
         conversation_history = get_thread_history(channel_id, thread_ts)
+
+        # デバッグ: スレッドの内容をログに出力
+        logger.info(f"Thread history: {json.dumps(conversation_history, indent=2)}")
+
+        # 最新のメッセージを除外（handle_slack_eventで既に処理済み）
+        conversation_history = conversation_history[:-1]
 
         # URLの抽出
         url = extract_url(message)
@@ -65,6 +77,9 @@ def lambda_handler(event, context):
 
         if response is None:  # URL処理で response が設定されていない場合
             messages, assistant_response_count = format_conversation_for_claude(conversation_history, append_message)
+            
+            # 最新のメッセージを追加
+            messages.append({"role": "user", "content": message})
             
             if assistant_response_count >= 50:
                 response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
