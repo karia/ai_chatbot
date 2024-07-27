@@ -3,6 +3,8 @@ import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from config import SLACK_BOT_TOKEN
+from utils import extract_url
+from url_utils import get_url_content
 
 logger = logging.getLogger()
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
@@ -36,12 +38,24 @@ def get_thread_history(channel_id, thread_ts):
         
         # 各メッセージに添付ファイルがあれば処理
         for msg in messages:
+            # 添付ファイルを取得
             files = msg.get('files', [])
             file_contents = process_files(files)
             if file_contents:
                 msg['text'] += "\n\n添付ファイルの内容:\n" + "\n---\n".join(file_contents)
-        
+            
+            # URLを取得
+            url = extract_url(msg['text'])
+            if url:
+                try:
+                    url_title, url_content = get_url_content(url)
+                    msg['url_content'] = f"URL内容:\nタイトル: {url_title}\n本文: {url_content[:500]}..."  # 最初の500文字のみ
+                except Exception as e:
+                    logger.error(f"Error processing URL {url}: {str(e)}")
+                    msg['url_content'] = f"Error processing URL: {str(e)}"
+
         return messages
+
     except SlackApiError as e:
         logger.error(f"Error fetching thread history: {e}")
         return []

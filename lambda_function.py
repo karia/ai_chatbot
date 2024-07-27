@@ -53,20 +53,20 @@ def lambda_handler(event, context):
         logger.info(f"Thread history: {json.dumps(conversation_history, indent=2)}")
 
         # 最新のメッセージを除外（handle_slack_eventで既に処理済み）
-        conversation_history = conversation_history[:-1]
+        latest_message = conversation_history.pop()
 
         # URLの抽出
-        url = extract_url(message)
+        url = extract_url(latest_message['text'])
 
         append_message = None
         response = None
 
         if url:
             try:
-                url_title,url_content = get_url_content(url)
+                url_title, url_content = get_url_content(url)
                 
                 # URLのみの場合とそうでない場合で処理を分ける
-                if message.strip() == f"<{url}>":
+                if latest_message['text'].strip() == f"<{url}>":
                     append_message = f"上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです；」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
                 else:
                     append_message = f"以下はURLの内容です：\n\nタイトル:{url_title}\n本文:{url_content}"
@@ -79,7 +79,7 @@ def lambda_handler(event, context):
             messages, assistant_response_count = format_conversation_for_claude(conversation_history, append_message)
             
             # 最新のメッセージを追加
-            messages.append({"role": "user", "content": message})
+            messages.append({"role": "user", "content": latest_message['text']})
             
             if assistant_response_count >= 50:
                 response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
