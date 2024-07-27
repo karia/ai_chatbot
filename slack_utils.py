@@ -18,12 +18,7 @@ def handle_slack_event(slack_event):
 
     # ファイルが添付されているか確認
     files = slack_event.get('files', [])
-    file_contents = []
-    for file in files:
-        if is_text_file(file):
-            content = get_file_content(file['id'])
-            if content:
-                file_contents.append(f"ファイル名: {file['name']}\n内容:\n{content}")
+    file_contents = process_files(files)
 
     # ファイルの内容をメッセージに追加
     if file_contents:
@@ -37,7 +32,16 @@ def get_thread_history(channel_id, thread_ts):
             channel=channel_id,
             ts=thread_ts
         )
-        return response['messages']
+        messages = response['messages']
+        
+        # 各メッセージに添付ファイルがあれば処理
+        for msg in messages:
+            files = msg.get('files', [])
+            file_contents = process_files(files)
+            if file_contents:
+                msg['text'] += "\n\n添付ファイルの内容:\n" + "\n---\n".join(file_contents)
+        
+        return messages
     except SlackApiError as e:
         logger.error(f"Error fetching thread history: {e}")
         return []
@@ -57,7 +61,6 @@ def is_text_file(file):
     mimetype = file.get('mimetype', '')
     filetype = file.get('filetype', '')
     
-    # mimetypeがtext/で始まる、またはfiletypeが特定のテキスト系ファイルタイプの場合
     return (mimetype.startswith('text/') or 
             filetype in ['text', 'python', 'javascript', 'java', 'c', 'cpp', 'css', 'html', 'xml', 'json', 'yaml', 'markdown', 'plain_text'])
 
@@ -77,3 +80,12 @@ def get_file_content(file_id):
     except SlackApiError as e:
         logger.error(f"Error fetching file content: {e}")
         return None
+
+def process_files(files):
+    file_contents = []
+    for file in files:
+        if is_text_file(file):
+            content = get_file_content(file['id'])
+            if content:
+                file_contents.append(f"ファイル名: {file['name']}\n内容:\n{content}")
+    return file_contents

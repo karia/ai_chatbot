@@ -52,6 +52,9 @@ def lambda_handler(event, context):
         # デバッグ: スレッドの内容をログに出力
         logger.info(f"Thread history: {json.dumps(conversation_history, indent=2)}")
 
+        # 最新のメッセージを除外（handle_slack_eventで既に処理済み）
+        conversation_history = conversation_history[:-1]
+
         # URLの抽出
         url = extract_url(message)
 
@@ -74,6 +77,9 @@ def lambda_handler(event, context):
 
         if response is None:  # URL処理で response が設定されていない場合
             messages, assistant_response_count = format_conversation_for_claude(conversation_history, append_message)
+            
+            # 最新のメッセージを追加
+            messages.append({"role": "user", "content": message})
             
             if assistant_response_count >= 50:
                 response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
