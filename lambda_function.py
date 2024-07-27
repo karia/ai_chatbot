@@ -49,6 +49,9 @@ def lambda_handler(event, context):
         # スレッドの会話履歴を取得
         conversation_history = get_thread_history(channel_id, thread_ts)
 
+        # デバッグ: スレッドの内容をログに出力
+        logger.info(f"Thread history: {json.dumps(conversation_history, indent=2)}")
+
         # URLの抽出
         url = extract_url(message)
 
