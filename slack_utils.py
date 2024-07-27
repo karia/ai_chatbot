@@ -63,10 +63,10 @@ def get_thread_history(channel_id, thread_ts):
             if url:
                 try:
                     url_title, url_content = get_url_content(url)
-                    msg['url_content'] = f"URL内容:\nタイトル: {url_title}\n本文: {url_content[:500]}..."  # 最初の500文字のみ
+                    msg['text'] += f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
                 except Exception as e:
                     logger.error(f"Error processing URL {url}: {str(e)}")
-                    msg['url_content'] = f"Error processing URL: {str(e)}"
+                    msg['text'] += f"\n\n【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
 
         return messages
 

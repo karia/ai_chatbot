@@ -69,23 +69,21 @@ def lambda_handler(event, context):
                 if latest_message['text'].strip() == f"<{url}>":
                     append_message = f"上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです；」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
                 else:
-                    append_message = f"以下はURLの内容です：\n\nタイトル:{url_title}\n本文:{url_content}"
+                    append_message = f"URLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
             except Exception as e:
-                error_message = create_error_message("URL処理", str(e))
-                logger.error(error_message)
-                response = error_message
+                    logger.error(f"Error processing URL {url}: {str(e)}")
+                    append_message = f"【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
 
-        if response is None:  # URL処理で response が設定されていない場合
-            messages, assistant_response_count = format_conversation_for_claude(conversation_history, append_message)
-            
-            # 最新のメッセージを追加
-            messages.append({"role": "user", "content": latest_message['text']})
-            
-            if assistant_response_count >= 50:
-                response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
-            else:
-                ai_response = invoke_claude_model(messages)
-                response = ai_response
+        messages, assistant_response_count = format_conversation_for_claude(conversation_history, append_message)
+        
+        # 最新のメッセージを追加
+        messages.append({"role": "user", "content": latest_message['text']})
+        
+        if assistant_response_count >= 50:
+            response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
+        else:
+            ai_response = invoke_claude_model(messages)
+            response = ai_response
 
         # AIの応答をログに記録
         logger.info(f"AI response: {response}")
