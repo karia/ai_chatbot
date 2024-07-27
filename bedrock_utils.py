@@ -3,6 +3,7 @@ import json
 import logging
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from config import *
 
 logger = logging.getLogger()
 
@@ -18,14 +19,14 @@ bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1', confi
 
 def invoke_claude_model(messages):
     body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1024,
+        "anthropic_version": AI_MODEL_VERSION,
+        "max_tokens": AI_MODEL_MAX_TOKENS,
         "messages": messages
     })
     
     try:
         response = bedrock_runtime.invoke_model(
-            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            modelId=AI_MODEL_ID,
             body=body
         )
         # debug log
