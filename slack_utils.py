@@ -28,6 +28,16 @@ def handle_slack_event(slack_event):
 
     return channel_id, user_id, message, thread_ts
 
+def get_bot_user_id():
+    try:
+        response = slack_client.auth_test()
+        return response["user_id"]
+    except SlackApiError as e:
+        logger.error(f"Error getting bot user ID: {e}")
+        return None
+
+BOT_USER_ID = get_bot_user_id()
+
 def get_thread_history(channel_id, thread_ts):
     try:
         response = slack_client.conversations_replies(
@@ -36,8 +46,12 @@ def get_thread_history(channel_id, thread_ts):
         )
         messages = response['messages']
         
-        # 各メッセージに添付ファイルがあれば処理
+        # 各メッセージの添付ファイル、URLを本文中に展開
         for msg in messages:
+            # ボットのメッセージの場合はスキップ
+            if msg.get('user') == BOT_USER_ID:
+                continue
+            
             # 添付ファイルを取得
             files = msg.get('files', [])
             file_contents = process_files(files)
