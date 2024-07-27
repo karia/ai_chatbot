@@ -1,4 +1,5 @@
 import logging
+import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from config import SLACK_BOT_TOKEN
@@ -19,14 +20,14 @@ def handle_slack_event(slack_event):
     files = slack_event.get('files', [])
     file_contents = []
     for file in files:
-        if file['filetype'] == 'text':
+        if is_text_file(file):
             content = get_file_content(file['id'])
             if content:
-                file_contents.append(content)
+                file_contents.append(f"ファイル名: {file['name']}\n内容:\n{content}")
 
     # ファイルの内容をメッセージに追加
     if file_contents:
-        message += "\n\n添付ファイルの内容:\n" + "\n".join(file_contents)
+        message += "\n\n添付ファイルの内容:\n" + "\n---\n".join(file_contents)
 
     return channel_id, user_id, message, thread_ts
 
@@ -52,12 +53,19 @@ def send_slack_message(channel_id, text, thread_ts):
         logger.error(f"Error sending message to Slack: {e}")
         raise
 
+def is_text_file(file):
+    mimetype = file.get('mimetype', '')
+    filetype = file.get('filetype', '')
+    
+    # mimetypeがtext/で始まる、またはfiletypeが特定のテキスト系ファイルタイプの場合
+    return (mimetype.startswith('text/') or 
+            filetype in ['text', 'python', 'javascript', 'java', 'c', 'cpp', 'css', 'html', 'xml', 'json', 'yaml', 'markdown', 'plain_text'])
+
 def get_file_content(file_id):
     try:
         response = slack_client.files_info(file=file_id)
         file_url = response['file']['url_private']
         
-        file_content = slack_client.files_sharedPublicURL(file=file_id)
         headers = {'Authorization': f'Bearer {SLACK_BOT_TOKEN}'}
         content_response = requests.get(file_url, headers=headers)
         
