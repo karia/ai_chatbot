@@ -3,6 +3,8 @@ import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from config import SLACK_BOT_TOKEN
+from utils import extract_url
+from url_utils import get_url_content
 
 logger = logging.getLogger()
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
@@ -26,6 +28,16 @@ def handle_slack_event(slack_event):
 
     return channel_id, user_id, message, thread_ts
 
+def get_bot_user_id():
+    try:
+        response = slack_client.auth_test()
+        return response["user_id"]
+    except SlackApiError as e:
+        logger.error(f"Error getting bot user ID: {e}")
+        return None
+
+BOT_USER_ID = get_bot_user_id()
+
 def get_thread_history(channel_id, thread_ts):
     try:
         response = slack_client.conversations_replies(
@@ -34,14 +46,30 @@ def get_thread_history(channel_id, thread_ts):
         )
         messages = response['messages']
         
-        # 各メッセージに添付ファイルがあれば処理
+        # 各メッセージの添付ファイル、URLを本文中に展開
         for msg in messages:
+            # ボットのメッセージの場合はスキップ
+            if msg.get('user') == BOT_USER_ID:
+                continue
+            
+            # 添付ファイルを取得
             files = msg.get('files', [])
             file_contents = process_files(files)
             if file_contents:
                 msg['text'] += "\n\n添付ファイルの内容:\n" + "\n---\n".join(file_contents)
-        
+            
+            # URLを取得
+            url = extract_url(msg['text'])
+            if url:
+                try:
+                    url_title, url_content = get_url_content(url)
+                    msg['text'] += f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
+                except Exception as e:
+                    logger.error(f"Error processing URL {url}: {str(e)}")
+                    msg['text'] += f"\n\n【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
+
         return messages
+
     except SlackApiError as e:
         logger.error(f"Error fetching thread history: {e}")
         return []
