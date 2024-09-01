@@ -66,14 +66,23 @@ def lambda_handler(event, context):
 
                 # URLのみの場合とそうでない場合で処理を分ける
                 if message.strip() == f"<{url}>":
-                    message += f"\n\n上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです：」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
+                    message += (
+                        f"\n\n上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。"
+                        f"要約の冒頭に「ウェブページの要約は以下の通りです：」と1行追加してください。：\n\n"
+                        f"タイトル: {url_title}\n"
+                        f"本文: {url_content}\n"
+                    )
                 else:
                     message += (
                         f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
                     )
             except Exception as e:
                 logger.error(f"Error processing URL {url}: {str(e)}")
-                message += f"【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
+                message += (
+                    f"【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n"
+                    f"対象URL: {url}\n"
+                    f"エラーメッセージ: {str(e)}"
+                )
 
         messages, assistant_response_count = format_conversation_for_claude(
             conversation_history, message

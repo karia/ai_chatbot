@@ -71,9 +71,11 @@ def get_thread_history(channel_id, thread_ts):
                     ] += f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
                 except Exception as e:
                     logger.error(f"Error processing URL {url}: {str(e)}")
-                    msg[
-                        "text"
-                    ] += f"\n\n【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
+                    msg["text"] += (
+                        f"\n\n【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n"
+                        f"対象URL: {url}\n"
+                        f"エラーメッセージ: {str(e)}\n"
+                    )
 
         return messages
 
@@ -125,7 +127,8 @@ def get_file_content(file_id):
             return content_response.text
         else:
             logger.error(
-                f"Failed to fetch file content. Status code: {content_response.status_code}"
+                "Failed to fetch file content. "
+                f"Status code: {content_response.status_code}"
             )
             return None
     except SlackApiError as e:

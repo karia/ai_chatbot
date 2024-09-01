@@ -35,7 +35,8 @@ def invoke_claude_model(messages):
     except ClientError as e:
         if e.response["Error"]["Code"] == "ThrottlingException":
             logger.warning(
-                "ThrottlingException occurred. Consider implementing a backoff strategy or reducing request frequency."
+                "ThrottlingException occurred. Consider implementing a backoff strategy"
+                " or reducing request frequency."
             )
         else:
             logger.error(f"Error invoking Bedrock model: {e}")
