@@ -8,43 +8,43 @@ from config import *
 logger = logging.getLogger()
 
 # カスタムリトライ設定
-custom_retry_config = Config(
-    retries={
-        'max_attempts': 8,
-        'mode': 'adaptive'
-    }
+custom_retry_config = Config(retries={"max_attempts": 8, "mode": "adaptive"})
+
+bedrock_runtime = boto3.client(
+    "bedrock-runtime", region_name="us-east-1", config=custom_retry_config
 )
 
-bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1', config=custom_retry_config)
 
 def invoke_claude_model(messages):
-    body = json.dumps({
-        "anthropic_version": AI_MODEL_VERSION,
-        "max_tokens": AI_MODEL_MAX_TOKENS,
-        "messages": messages
-    })
+    body = json.dumps(
+        {
+            "anthropic_version": AI_MODEL_VERSION,
+            "max_tokens": AI_MODEL_MAX_TOKENS,
+            "messages": messages,
+        }
+    )
 
     # debug log
     logger.info(f"Messages: {json.dumps(messages, indent=2)}")
 
     try:
-        response = bedrock_runtime.invoke_model(
-            modelId=AI_MODEL_ID,
-            body=body
-        )
+        response = bedrock_runtime.invoke_model(modelId=AI_MODEL_ID, body=body)
 
-        response_body = json.loads(response['body'].read())
-        return response_body['content'][0]['text']
+        response_body = json.loads(response["body"].read())
+        return response_body["content"][0]["text"]
     except ClientError as e:
-        if e.response['Error']['Code'] == 'ThrottlingException':
-            logger.warning("ThrottlingException occurred. Consider implementing a backoff strategy or reducing request frequency.")
+        if e.response["Error"]["Code"] == "ThrottlingException":
+            logger.warning(
+                "ThrottlingException occurred. Consider implementing a backoff strategy or reducing request frequency."
+            )
         else:
             logger.error(f"Error invoking Bedrock model: {e}")
-            if 'ValidationException' in str(e):
+            if "ValidationException" in str(e):
                 logger.error("Validation error. Check the format of the messages.")
         raise
 
     raise Exception("Failed to invoke Bedrock model")
+
 
 def format_conversation_for_claude(conversation_history, append_message=None):
     formatted_messages = []
@@ -52,12 +52,12 @@ def format_conversation_for_claude(conversation_history, append_message=None):
     last_role = None
 
     for msg in conversation_history:
-        role = "assistant" if msg.get('bot_id') else "user"
-        content = msg['text']
+        role = "assistant" if msg.get("bot_id") else "user"
+        content = msg["text"]
 
         # ボットメンションを除去（Slackの履歴にはメンションが含まれている可能性があるため）
         if role == "user":
-            content = content.split('>', 1)[-1].strip()
+            content = content.split(">", 1)[-1].strip()
 
         if role == "assistant":
             assistant_response_count += 1

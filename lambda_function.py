@@ -11,29 +11,27 @@ from config import DYNAMODB_TABLE_NAME
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
 def lambda_handler(event, context):
     try:
         # デバッグ: リクエスト全体をログに出力
         logger.info(f"Received event: {json.dumps(event, indent=2)}")
 
         # Slack Event APIからのチャレンジレスポンスの処理
-        if 'challenge' in event['body']:
-            return {
-                'statusCode': 200,
-                'body': json.loads(event['body'])['challenge']
-            }
-        
+        if "challenge" in event["body"]:
+            return {"statusCode": 200, "body": json.loads(event["body"])["challenge"]}
+
         # イベントの解析
-        body = json.loads(event['body'])
-        slack_event = body['event']
-        event_id = body['event_id']
+        body = json.loads(event["body"])
+        slack_event = body["event"]
+        event_id = body["event_id"]
 
         # デバッグ: パースされたbodyをログに出力
         logger.info(f"Parsed body: {json.dumps(body, indent=2)}")
-        
+
         # app_mentionイベント以外は無視
-        if slack_event['type'] != 'app_mention':
-            return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
+        if slack_event["type"] != "app_mention":
+            return {"statusCode": 200, "body": json.dumps({"message": "OK"})}
 
         # Slackイベントの処理
         channel_id, user_id, message, thread_ts = handle_slack_event(slack_event)
@@ -44,7 +42,10 @@ def lambda_handler(event, context):
         # 仮のエントリをDynamoDBに保存
         if not save_initial_event(event_id, user_id, channel_id, thread_ts, message):
             logger.info(f"Duplicate event detected: {event_id}")
-            return {'statusCode': 200, 'body': json.dumps({'message': 'Duplicate event ignored'})}
+            return {
+                "statusCode": 200,
+                "body": json.dumps({"message": "Duplicate event ignored"}),
+            }
 
         # スレッドの会話履歴を取得
         conversation_history = get_thread_history(channel_id, thread_ts)
@@ -63,17 +64,21 @@ def lambda_handler(event, context):
         if url:
             try:
                 url_title, url_content = get_url_content(url)
-                
+
                 # URLのみの場合とそうでない場合で処理を分ける
                 if message.strip() == f"<{url}>":
                     message += f"\n\n上記URLのウェブページの内容を以下に示しますので、簡潔に要約してください。要約の冒頭に「ウェブページの要約は以下の通りです：」と1行追加してください。：\n\nタイトル:{url_title}\n本文:{url_content}"
                 else:
-                    message += f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
+                    message += (
+                        f"\n\nURLの内容：\n\nタイトル:{url_title}\n本文:{url_content}"
+                    )
             except Exception as e:
                 logger.error(f"Error processing URL {url}: {str(e)}")
                 message += f"【システムメッセージ】URL内容取得を試みましたが、失敗しました。\n対象URL:{url}\nエラーメッセージ: {str(e)}"
 
-        messages, assistant_response_count = format_conversation_for_claude(conversation_history, message)
+        messages, assistant_response_count = format_conversation_for_claude(
+            conversation_history, message
+        )
 
         if assistant_response_count >= 50:
             response = "申し訳ありませんが、このスレッドでの回答回数が制限を超えました。新しいスレッドで質問していただくようお願いいたします。"
@@ -90,18 +95,25 @@ def lambda_handler(event, context):
         # DynamoDBのエントリを更新
         update_event(event_id, response)
 
-        return {'statusCode': 200, 'body': json.dumps({'message': 'OK'})}
+        return {"statusCode": 200, "body": json.dumps({"message": "OK"})}
 
     except Exception as e:
         error_message = create_error_message("予期せぬエラー", str(e))
         logger.error(error_message)
-        
+
         # エラーメッセージをSlackに送信
         try:
-            channel_id = json.loads(event['body'])['event']['channel']
-            thread_ts = json.loads(event['body'])['event'].get('thread_ts', json.loads(event['body'])['event']['ts'])
+            channel_id = json.loads(event["body"])["event"]["channel"]
+            thread_ts = json.loads(event["body"])["event"].get(
+                "thread_ts", json.loads(event["body"])["event"]["ts"]
+            )
             send_slack_message(channel_id, error_message, thread_ts)
         except Exception as slack_error:
-            logger.error(f"Slackへのエラーメッセージ送信中にエラーが発生しました：{str(slack_error)}")
-        
-        return {'statusCode': 500, 'body': json.dumps({'error': 'Internal Server Error'})}
+            logger.error(
+                f"Slackへのエラーメッセージ送信中にエラーが発生しました：{str(slack_error)}"
+            )
+
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Internal Server Error"}),
+        }
