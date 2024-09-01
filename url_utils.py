@@ -5,21 +5,22 @@ import logging
 
 logger = logging.getLogger()
 
+
 def get_url_content(url):
     try:
         # URLから余分な文字（< >）を削除
-        url = url.strip('<>')
+        url = url.strip("<>")
         logger.info(f"Attempting to fetch content from URL: {url}")
-        
+
         response = requests.get(url)
         logger.info(f"Response status code: {response.status_code}")
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
+
+        soup = BeautifulSoup(response.content, "html.parser")
+
         # メタデータの取得
         title = soup.title.string if soup.title else "No title found"
         logger.info(f"Title: {title}")
-        
+
         # body タグ内の全てのテキストを取得
         body = soup.body
         if body:
@@ -29,13 +30,13 @@ def get_url_content(url):
             content = body.get_text()
         else:
             content = "No body content found"
-        
+
         # 不要な空白文字の削除
-        content = re.sub(r'\s+', ' ', content).strip()
-        
+        content = re.sub(r"\s+", " ", content).strip()
+
         logger.info(f"Content length: {len(content)} characters")
         logger.info(f"Content preview: {content[:200]}...")
-        
+
         return title, content
     except requests.RequestException as e:
         error_message = f"Error fetching URL content: {str(e)}"
