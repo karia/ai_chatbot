@@ -5,7 +5,6 @@ from dynamodb_utils import save_initial_event, update_event
 from bedrock_utils import invoke_claude_model, format_conversation_for_claude
 from url_utils import get_url_content
 from utils import create_error_message, extract_url
-from config import DYNAMODB_TABLE_NAME
 
 # ロガーの設定
 logger = logging.getLogger()
