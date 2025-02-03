@@ -14,7 +14,7 @@ rm -rf package/*
 # install python packages
 # ref https://zenn.dev/galapagos/articles/a222e38a32f4ba
 
-pip install -r "requirements.txt" -t "./package" --upgrade 
+python3 -m pip install -r "requirements.txt" -t "./package" --upgrade 
 
 # deploy
 # https://github.com/fujiwara/lambroll
