@@ -5,4 +5,4 @@ export SLACK_BOT_TOKEN="xoxb-test-token"
 export DYNAMODB_TABLE_NAME="test-table"
 
 # pytestを実行
-python -m pytest "$@"
+python3 -m pytest "$@"
