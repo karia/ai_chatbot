@@ -128,7 +128,9 @@ def test_lambda_handler_duplicate_event(
 @patch("lambda_function.get_thread_history")
 @patch("lambda_function.format_conversation_for_claude")
 @patch("lambda_function.send_slack_message")
+@patch("lambda_function.update_event")
 def test_lambda_handler_response_limit(
+    mock_update_event,
     mock_send_slack_message,
     mock_format_conversation,
     mock_get_thread_history,
@@ -184,7 +186,9 @@ def test_lambda_handler_response_limit(
 @patch("lambda_function.format_conversation_for_claude")
 @patch("lambda_function.invoke_claude_model")
 @patch("lambda_function.send_slack_message")
+@patch("lambda_function.update_event")
 def test_lambda_handler_with_url(
+    mock_update_event,
     mock_send_slack_message,
     mock_invoke_claude_model,
     mock_format_conversation,
@@ -250,7 +254,9 @@ def test_lambda_handler_with_url(
 @patch("lambda_function.format_conversation_for_claude")
 @patch("lambda_function.invoke_claude_model")
 @patch("lambda_function.send_slack_message")
+@patch("lambda_function.update_event")
 def test_lambda_handler_with_url_only(
+    mock_update_event,
     mock_send_slack_message,
     mock_invoke_claude_model,
     mock_format_conversation,
@@ -317,7 +323,9 @@ def test_lambda_handler_with_url_only(
 @patch("lambda_function.format_conversation_for_claude")
 @patch("lambda_function.invoke_claude_model")
 @patch("lambda_function.send_slack_message")
+@patch("lambda_function.update_event")
 def test_lambda_handler_with_url_error(
+    mock_update_event,
     mock_send_slack_message,
     mock_invoke_claude_model,
     mock_format_conversation,
