@@ -1,0 +1,26 @@
+# Project Guidelines
+
+## Git & Branching
+
+- Create a new branch from `main` for each new feature or improvement.
+- Make a pull request to `main` branch after finishing a feature or improvement.
+
+## Code Style & Patterns
+
+- PEP8 guidelines should be followed for Python code.
+- Shellcheck should be used for shell scripts.
+
+## Architecture Decision Records
+
+Create ADRs in /docs/adr for:
+
+-   Major dependency changes
+-   Architectural pattern changes
+-   New integration patterns
+-   Database schema changes
+
+## Security Practices
+
+-   Never commit sensitive files
+-   Use environment variables for secrets
+-   Keep credentials out of logs and output
