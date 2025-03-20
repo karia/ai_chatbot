@@ -16,6 +16,9 @@ bedrock_runtime = boto3.client(
 
 
 def invoke_claude_model(messages):
+    """
+    AWS Bedrock Claude モデルを呼び出して応答を取得
+    """
     body = json.dumps(
         {
             "anthropic_version": AI_MODEL_VERSION,
@@ -43,6 +46,9 @@ def invoke_claude_model(messages):
             if "ValidationException" in str(e):
                 logger.error("Validation error. Check the format of the messages.")
         raise
+    except Exception as e:
+        # メッセージの変更
+        raise Exception(f"Failed to invoke Bedrock model: {str(e)}")
 
     raise Exception("Failed to invoke Bedrock model")
 
