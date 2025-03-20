@@ -81,6 +81,59 @@
 
 5. 会話コンテキストはスレッド内で維持され、複数ターンの会話が可能です。
 
+## テスト
+
+このプロジェクトには、ユニットテストが含まれています。テストは各モジュールの機能を検証し、リファクタリングやコード変更時のバグ混入を防ぎます。
+
+### テスト環境のセットアップ
+
+1. テスト用の依存関係をインストールします：
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+### テストの実行方法
+
+テスト実行用のスクリプトを使用して、すべてのテストを実行できます：
+```bash
+./run_tests.sh
+```
+
+特定のテストファイルのみを実行する場合：
+```bash
+./run_tests.sh tests/unit/test_utils.py
+```
+
+カバレッジレポートを生成する場合：
+```bash
+./run_tests.sh --cov-report=html
+```
+
+### conftest.pyについて
+
+`tests/conftest.py`ファイルは、pytest用の共通設定とフィクスチャを提供します：
+
+1. **環境変数の設定**：
+   - テスト実行時に必要な環境変数（`SLACK_BOT_TOKEN`や`DYNAMODB_TABLE_NAME`など）を自動的に設定します。
+   - 実際のAPIキーやトークンを使用せずにテストを実行できます。
+
+2. **共通フィクスチャ**：
+   - `slack_event_fixture`：Slackイベントのモックデータを提供
+   - `mock_bedrock_response`：AWS Bedrock APIレスポンスのモック
+   - `aws_credentials`：AWS認証情報のモック
+
+3. **使い方**：
+   - テストファイル内でフィクスチャを引数として使用するだけで、自動的に適用されます：
+     ```python
+     def test_function(slack_event_fixture):
+         # slack_event_fixtureを使用したテスト
+         ...
+     ```
+   - 環境変数は`autouse=True`で設定されているため、明示的に呼び出す必要はありません。
+
+4. **カスタマイズ**：
+   - 新しいモックやフィクスチャが必要な場合は、`conftest.py`に追加することで、すべてのテストで利用可能になります。
+
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
