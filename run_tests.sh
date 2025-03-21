@@ -25,6 +25,7 @@ export SLACK_BOT_TOKEN="xoxb-test-token"
 export DYNAMODB_TABLE_NAME="test-table"
 
 # pytestを実行
+export PYTHONPATH="src"
 python3 -m pytest "$@"
 
 echo "テスト完了。仮想環境: $VENV_PATH"

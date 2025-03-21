@@ -19,7 +19,7 @@ pip install -r "requirements.txt" -t "./package" --upgrade
 # deploy
 # https://github.com/fujiwara/lambroll
 
-cp ./*.py package
+cp -r ./src/*.py package
 lambroll deploy --src="package"
 rm -rf package
 
