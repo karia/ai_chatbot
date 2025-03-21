@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+# 引数チェック
+if [ "$#" -lt 1 ]; then
+	echo "Usage: $0 <function_file>" >&2
+	exit 1
+fi
+
+FUNCTION_FILE=$1
+
 set -eu
 
 # Change directory
@@ -20,7 +28,7 @@ pip install -r "requirements.txt" -t "./package" --upgrade
 # https://github.com/fujiwara/lambroll
 
 cp -r ./src/*.py package
-lambroll deploy --src="package"
+lambroll deploy --src="package" --function="$FUNCTION_FILE"
 rm -rf package
 
 echo "finished."

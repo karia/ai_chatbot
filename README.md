@@ -10,7 +10,6 @@
 - AWS Lambda: Slackイベントの処理とメッセージの処理を担当
 - Amazon Bedrock: レスポンス生成のためのClaude 3 Sonnet AIモデルを提供
 - Amazon DynamoDB: 会話履歴とイベントデータを保存
-- API Gateway: SlackイベントのHTTPエンドポイントを提供
 
 ## 機能
 
@@ -28,30 +27,42 @@
   - Lambda
   - DynamoDB
   - Bedrock（Claude 3 Sonnetモデルが有効）
-  - API Gateway
 - アプリを追加する権限を持つSlackワークスペース
 - デプロイメント用の[lambroll](https://github.com/fujiwara/lambroll)
 
 ## Deployment
 
-1. このリポジトリをローカルマシンにクローンします。
+1. [Slack api -> Your Apps](https://api.slack.com/apps) で Create New App してください。
 
-2. デプロイスクリプトを実行します：
+2. OAuth & Permissions -> Scopes -> Bot Token Scopes で以下権限を付与してください。
+   - app_mentions:read
+   - channels:history
+   - chat:write
+   - files:read
+   - groups:history
+   - im:history
+   - mpim:history
+
+3. OAuth & Permissions -> Install to Workspace でボットをワークスペースにインストールしてください。
+
+4. このリポジトリをローカルマシンにクローンしてください。
+
+5. デプロイスクリプトを実行します：
    ```bash
    ./deploy.sh
    ```
 
-3. Lambdaに環境変数を設定します。必要な環境変数は：
-   - `SLACK_BOT_TOKEN`: SlackボットトークンS
-   - `DYNAMODB_TABLE_NAME`: DynamoDBテーブル名
+6. Lambdaの設定で、適切なIAMおよび環境変数を設定します。
 
-4. LambdaのトリガーとしてAPI Gatewayを設定します。
+7. Lambdaの設定で関数URLを発行してください
 
-5. Slackイベントサブスクリプションを設定します：
-   - リクエストURLをAPI GatewayエンドポイントにポイントS
-   - `app_mention`イベントをサブスクライブ
+8. Slack Api -> Event Subscriptions で以下を設定したあと、Save Changes してください。
+   - Enable Events をONにする
+   - Request URL にLambdaのエンドポイントを入れる
+   - Subscribe to bot events で以下を追加
+     - app_mention
 
-6. Slackでボットを招待し、メンションを送信することで対話を開始できます。ボットに適切な権限を付与してください。
+9. Slackでボットを招待し、メンションを送信することで対話を開始できます。
 
 ## 設定
 

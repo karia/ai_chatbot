@@ -162,7 +162,7 @@ cython_debug/
 #.idea/
 
 package/
-function.json
+function*.json
 
 # virtual env
 exec_test/*
