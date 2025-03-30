@@ -73,7 +73,11 @@ def format_conversation_for_claude(conversation_history, append_message=None):
 
         # ボットメンションを除去（Slackの履歴にはメンションが含まれている可能性があるため）
         if role == "user":
-            content = content.split(">", 1)[-1].strip()
+            from slack_utils import BOT_USER_ID
+
+            if BOT_USER_ID:
+                bot_mention = f"<@{BOT_USER_ID}>"
+                content = content.replace(bot_mention, "").strip()
 
         if role == "assistant":
             assistant_response_count += 1
