@@ -17,7 +17,12 @@ def handle_slack_event(slack_event):
     thread_ts = slack_event.get("thread_ts", slack_event["ts"])
 
     # メッセージからボットメンションを除去
-    message = message.split(">", 1)[-1].strip()
+    # 正規表現を使うのがベストですが、シンプルなアプローチとして
+    # メンション形式の <@Uxxxxxx> を検索して削除します
+    bot_user_id = get_bot_user_id()
+    if bot_user_id:
+        bot_mention = f"<@{bot_user_id}>"
+        message = message.replace(bot_mention, "").strip()
 
     # ファイルが添付されているか確認
     files = slack_event.get("files", [])

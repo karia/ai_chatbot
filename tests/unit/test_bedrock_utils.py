@@ -53,7 +53,7 @@ def test_format_conversation_for_claude_with_history():
 
     assert len(messages) == 3
     assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == "こんにちは"
+    assert messages[0]["content"] == "<@U123> こんにちは"
     assert messages[1]["role"] == "assistant"
     assert messages[1]["content"] == "こんにちは、何かお手伝いできますか？"
     assert messages[2]["role"] == "user"
@@ -92,7 +92,7 @@ def test_format_conversation_for_claude_consecutive_same_role():
 
     assert len(messages) == 2  # 同じロールのメッセージが結合されるため2つになる
     assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == "最初の質問\n追加の質問"
+    assert messages[0]["content"] == "<@U123> 最初の質問\n追加の質問"
     assert messages[1]["role"] == "assistant"
     assert messages[1]["content"] == "回答1\n回答2"
     assert count == 2  # assistantのメッセージが2つ

@@ -11,7 +11,8 @@ from slack_utils import (
 
 
 @patch("slack_utils.process_files")
-def test_handle_slack_event_basic(mock_process_files):
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_basic(mock_get_bot_user_id, mock_process_files):
     """handle_slack_event関数が基本的なSlackイベントを正しく処理できることをテスト"""
     # モックの設定
     mock_process_files.return_value = []
@@ -36,7 +37,36 @@ def test_handle_slack_event_basic(mock_process_files):
 
 
 @patch("slack_utils.process_files")
-def test_handle_slack_event_with_thread(mock_process_files):
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_mention_after_message(
+    mock_get_bot_user_id, mock_process_files
+):
+    """メッセージよりmentionが後ろにあってもhandle_slack_event関数が正しく処理できることをテスト"""
+    # モックの設定
+    mock_process_files.return_value = []
+
+    # テストデータ
+    slack_event = {
+        "channel": "C123456",
+        "user": "U123456",
+        "text": "こんにちは <@U123456>",
+        "ts": "1234567890.123456",
+    }
+
+    # 関数の実行
+    channel_id, user_id, message, thread_ts = handle_slack_event(slack_event)
+
+    # 検証
+    assert channel_id == "C123456"
+    assert user_id == "U123456"
+    assert message == "こんにちは"
+    assert thread_ts == "1234567890.123456"
+    mock_process_files.assert_called_once_with([])
+
+
+@patch("slack_utils.process_files")
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_with_thread(mock_get_bot_user_id, mock_process_files):
     """handle_slack_event関数がスレッド内のイベントを正しく処理できることをテスト"""
     # モックの設定
     mock_process_files.return_value = []
@@ -59,7 +89,8 @@ def test_handle_slack_event_with_thread(mock_process_files):
 
 
 @patch("slack_utils.process_files")
-def test_handle_slack_event_with_files(mock_process_files):
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_with_files(mock_get_bot_user_id, mock_process_files):
     """handle_slack_event関数がファイル添付を正しく処理できることをテスト"""
     # モックの設定
     mock_process_files.return_value = ["ファイル内容1", "ファイル内容2"]
