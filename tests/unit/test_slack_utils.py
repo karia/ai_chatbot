@@ -11,7 +11,8 @@ from slack_utils import (
 
 
 @patch("slack_utils.process_files")
-def test_handle_slack_event_basic(mock_process_files):
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_basic(mock_get_bot_user_id, mock_process_files):
     """handle_slack_event関数が基本的なSlackイベントを正しく処理できることをテスト"""
     # モックの設定
     mock_process_files.return_value = []
@@ -36,7 +37,8 @@ def test_handle_slack_event_basic(mock_process_files):
 
 
 @patch("slack_utils.process_files")
-def test_handle_slack_event_with_thread(mock_process_files):
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_with_thread(mock_get_bot_user_id, mock_process_files):
     """handle_slack_event関数がスレッド内のイベントを正しく処理できることをテスト"""
     # モックの設定
     mock_process_files.return_value = []
@@ -59,7 +61,8 @@ def test_handle_slack_event_with_thread(mock_process_files):
 
 
 @patch("slack_utils.process_files")
-def test_handle_slack_event_with_files(mock_process_files):
+@patch("slack_utils.get_bot_user_id", return_value="U123456")
+def test_handle_slack_event_with_files(mock_get_bot_user_id, mock_process_files):
     """handle_slack_event関数がファイル添付を正しく処理できることをテスト"""
     # モックの設定
     mock_process_files.return_value = ["ファイル内容1", "ファイル内容2"]
