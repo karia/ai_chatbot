@@ -4,6 +4,7 @@
 
 - Create a new branch from `main` for each new feature or improvement.
 - Make a pull request to `main` branch after finishing a feature or improvement.
+- Write commit messages in English.
 
 ## Code Style & Patterns
 
