@@ -32,8 +32,13 @@ def invoke_claude_model(messages):
 
     try:
         response = bedrock_runtime.invoke_model(modelId=AI_MODEL_ID, body=body)
-
         response_body = json.loads(response["body"].read())
+        logger.debug(f"Bedrock response: {json.dumps(response_body)}")
+
+        # content配列が存在するか、空でないかを確認
+        if "content" not in response_body or not response_body["content"]:
+            raise Exception("Invalid response format: 'content' key missing or empty")
+
         return response_body["content"][0]["text"]
     except ClientError as e:
         if e.response["Error"]["Code"] == "ThrottlingException":
@@ -46,11 +51,15 @@ def invoke_claude_model(messages):
             if "ValidationException" in str(e):
                 logger.error("Validation error. Check the format of the messages.")
         raise
+    except IndexError as e:
+        # リストインデックスエラーを明示的に処理
+        logger.error(f"Index error while processing Bedrock response: {e}")
+        logger.error(f"Response body structure: {response_body}")
+        raise Exception("Failed to extract text from Bedrock response")
     except Exception as e:
         # メッセージの変更
+        logger.error(f"Unexpected error: {e}")
         raise Exception(f"Failed to invoke Bedrock model: {str(e)}")
-
-    raise Exception("Failed to invoke Bedrock model")
 
 
 def format_conversation_for_claude(conversation_history, append_message=None):

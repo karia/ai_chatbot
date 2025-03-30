@@ -138,7 +138,7 @@ def handle_error(event, error):
     Returns:
         dict: エラーレスポンス
     """
-    error_message = create_error_message("予期せぬエラー", str(error))
+    error_message = create_error_message("処理中", str(error))
     logger.error(error_message)
 
     # エラーメッセージをSlackに送信
