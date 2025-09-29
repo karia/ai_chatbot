@@ -11,7 +11,7 @@ logger = logging.getLogger()
 custom_retry_config = Config(retries={"max_attempts": 8, "mode": "adaptive"})
 
 bedrock_runtime = boto3.client(
-    "bedrock-runtime", region_name="us-east-1", config=custom_retry_config
+    "bedrock-runtime", region_name="us-west-2", config=custom_retry_config
 )
 
 
