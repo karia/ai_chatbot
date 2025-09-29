@@ -145,6 +145,79 @@
 4. **カスタマイズ**：
    - 新しいモックやフィクスチャが必要な場合は、`conftest.py`に追加することで、すべてのテストで利用可能になります。
 
+## トラブルシューティング
+
+### Bedrock モデルのアクセス権限エラー
+
+`AccessDeniedException` や `ValidationException` が発生する場合、以下の手順で問題を診断できます。
+
+#### 1. 利用可能なモデルを確認
+
+```bash
+# 特定プロバイダーのモデル一覧を取得
+aws bedrock list-foundation-models --region ap-northeast-1 --by-provider anthropic \
+  --query "modelSummaries[?contains(modelId, 'sonnet')].{ModelId:modelId,ModelName:modelName,Status:modelLifecycle.status}" \
+  --output json
+```
+
+#### 2. Inference Profile を確認
+
+```bash
+# Claude 4 系の Inference Profile を確認
+aws bedrock list-inference-profiles --region ap-northeast-1 \
+  --query "inferenceProfileSummaries[?contains(inferenceProfileName, 'Claude') && contains(inferenceProfileName, '4')].{ProfileId:inferenceProfileId,ProfileName:inferenceProfileName,Type:type}" \
+  --output json
+```
+
+#### 3. 実際にモデルを呼び出してテスト
+
+```bash
+# リクエストボディを作成
+printf '{"anthropic_version":"bedrock-2023-05-31","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}' > /tmp/body.json
+
+# 異なるリージョンで試す
+aws bedrock-runtime invoke-model --region us-east-1 \
+  --model-id "global.anthropic.claude-sonnet-4-5-20250929-v1:0" \
+  --body fileb:///tmp/body.json /tmp/response.json
+
+aws bedrock-runtime invoke-model --region us-west-2 \
+  --model-id "global.anthropic.claude-sonnet-4-5-20250929-v1:0" \
+  --body fileb:///tmp/body.json /tmp/response.json
+
+aws bedrock-runtime invoke-model --region ap-northeast-1 \
+  --model-id "global.anthropic.claude-sonnet-4-5-20250929-v1:0" \
+  --body fileb:///tmp/body.json /tmp/response.json
+
+# レスポンスを確認
+cat /tmp/response.json | jq '.'
+```
+
+#### 4. Lambda の IAM ロールを確認
+
+```bash
+# Lambda 関数の IAM ロールを取得
+aws lambda get-function --function-name ai_chatbot --query 'Configuration.Role' --output text
+
+# IAM ポリシーを確認
+aws iam list-attached-role-policies --role-name <role-name> --output json
+aws iam list-role-policies --role-name <role-name> --output json
+aws iam get-role-policy --role-name <role-name> --policy-name <policy-name> --output json
+```
+
+#### よくある問題と解決策
+
+- **特定リージョンで AccessDeniedException が発生する場合**
+  - そのリージョンで Model Access が有効化されていない可能性があります
+  - 別のリージョンで試すか、AWS Bedrock コンソールで Model Access を有効化してください
+
+- **`us.` や `global.` プレフィックスで AccessDeniedException が発生する場合**
+  - Inference Profile へのアクセス権限が必要です
+  - IAM ポリシーに `arn:aws:bedrock:*:*:inference-profile/*` が含まれているか確認してください
+
+- **ValidationException: on-demand throughput isn't supported**
+  - 一部の新しいモデルは直接呼び出せず、Inference Profile の使用が必須です
+  - モデル ID に `us.` または `global.` プレフィックスを付けてください
+
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
