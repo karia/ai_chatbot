@@ -181,7 +181,12 @@ def test_send_slack_message_success(mock_chat_post_message):
 
     # 検証
     mock_chat_post_message.assert_called_once_with(
-        channel="C123", text="テストメッセージ", thread_ts="1234567890.123456"
+        channel="C123",
+        text="テストメッセージ",
+        thread_ts="1234567890.123456",
+        blocks=[
+            {"type": "section", "text": {"type": "mrkdwn", "text": "テストメッセージ"}}
+        ],
     )
 
 

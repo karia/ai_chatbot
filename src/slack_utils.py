@@ -190,7 +190,10 @@ def send_slack_message(channel_id, text, thread_ts):
         messages = split_message(converted_text)
         for msg in messages:
             slack_client.chat_postMessage(
-                channel=channel_id, text=msg, thread_ts=thread_ts
+                channel=channel_id,
+                text=msg,
+                thread_ts=thread_ts,
+                blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": msg}}],
             )
     except SlackApiError as e:
         logger.error(f"Error sending message to Slack: {e}")
