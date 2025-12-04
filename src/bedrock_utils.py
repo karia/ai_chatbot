@@ -15,7 +15,10 @@ bedrock_runtime = boto3.client(
     "bedrock-runtime", region_name="ap-northeast-1", config=custom_retry_config
 )
 
-SYSTEM_PROMPT = "あなたはSlackチャットボットです。回答は簡潔に、要点を絞って回答してください。"
+SYSTEM_PROMPT = (
+    "あなたはSlackチャットボットです。回答は簡潔に、要点を絞って回答してください。"
+    "チャットでの自然な対話を心がけ、markdownや箇条書きは必要な場合のみ使用してください。"
+)
 
 
 def strip_thinking_tags(text):
