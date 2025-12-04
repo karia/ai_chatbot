@@ -156,7 +156,7 @@
 ```bash
 # 特定プロバイダーのモデル一覧を取得
 aws bedrock list-foundation-models --region ap-northeast-1 --by-provider anthropic \
-  --query "modelSummaries[?contains(modelId, 'sonnet')].{ModelId:modelId,ModelName:modelName,Status:modelLifecycle.status}" \
+  --query "modelSummaries[?contains(modelId, 'claude')].{ModelId:modelId,ModelName:modelName,Status:modelLifecycle.status}" \
   --output json
 ```
 

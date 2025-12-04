@@ -1,5 +1,5 @@
 from unittest.mock import patch
-from bedrock_utils import invoke_claude_model, format_conversation_for_claude
+from bedrock_utils import invoke_claude_model, format_conversation_for_claude, strip_thinking_tags
 
 
 @patch("bedrock_utils.bedrock_runtime.invoke_model")
@@ -96,3 +96,27 @@ def test_format_conversation_for_claude_consecutive_same_role():
     assert messages[1]["role"] == "assistant"
     assert messages[1]["content"] == "回答1\n回答2"
     assert count == 2  # assistantのメッセージが2つ
+
+
+def test_strip_thinking_tags_removes_tag():
+    """strip_thinking_tags関数がthinkingタグを除去することをテスト"""
+    text = "<thinking>内部思考</thinking>実際の回答"
+    assert strip_thinking_tags(text) == "実際の回答"
+
+
+def test_strip_thinking_tags_multiple():
+    """strip_thinking_tags関数が複数のthinkingタグを除去することをテスト"""
+    text = "<thinking>思考1</thinking>回答1<thinking>思考2</thinking>回答2"
+    assert strip_thinking_tags(text) == "回答1回答2"
+
+
+def test_strip_thinking_tags_multiline():
+    """strip_thinking_tags関数が複数行のthinkingタグを除去することをテスト"""
+    text = "<thinking>\n複数行\n思考\n</thinking>\n回答"
+    assert strip_thinking_tags(text) == "回答"
+
+
+def test_strip_thinking_tags_no_tag():
+    """strip_thinking_tags関数がタグなしのテキストをそのまま返すことをテスト"""
+    text = "タグなしの回答"
+    assert strip_thinking_tags(text) == "タグなしの回答"

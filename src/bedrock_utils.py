@@ -1,6 +1,7 @@
 import boto3
 import json
 import logging
+import re
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from config import *
@@ -14,6 +15,11 @@ bedrock_runtime = boto3.client(
     "bedrock-runtime", region_name="ap-northeast-1", config=custom_retry_config
 )
 
+def strip_thinking_tags(text):
+    """レスポンスから<thinking>タグとその内容を除去"""
+    pattern = r"<thinking>.*?</thinking>"
+    return re.sub(pattern, "", text, flags=re.DOTALL).strip()
+
 
 def invoke_claude_model(messages):
     """
@@ -23,6 +29,7 @@ def invoke_claude_model(messages):
         {
             "anthropic_version": AI_MODEL_VERSION,
             "max_tokens": AI_MODEL_MAX_TOKENS,
+            "system": AI_SYSTEM_PROMPT,
             "messages": messages,
         }
     )
@@ -39,7 +46,8 @@ def invoke_claude_model(messages):
         if "content" not in response_body or not response_body["content"]:
             raise Exception("Invalid response format: 'content' key missing or empty")
 
-        return response_body["content"][0]["text"]
+        raw_text = response_body["content"][0]["text"]
+        return strip_thinking_tags(raw_text)
     except ClientError as e:
         if e.response["Error"]["Code"] == "ThrottlingException":
             logger.warning(
