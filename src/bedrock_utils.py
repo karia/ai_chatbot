@@ -15,12 +15,6 @@ bedrock_runtime = boto3.client(
     "bedrock-runtime", region_name="ap-northeast-1", config=custom_retry_config
 )
 
-SYSTEM_PROMPT = (
-    "あなたはSlackチャットボットです。回答は簡潔に、要点を絞って回答してください。"
-    "チャットでの自然な対話を心がけ、markdownや箇条書きは必要な場合のみ使用してください。"
-)
-
-
 def strip_thinking_tags(text):
     """レスポンスから<thinking>タグとその内容を除去"""
     pattern = r"<thinking>.*?</thinking>"
@@ -35,7 +29,7 @@ def invoke_claude_model(messages):
         {
             "anthropic_version": AI_MODEL_VERSION,
             "max_tokens": AI_MODEL_MAX_TOKENS,
-            "system": SYSTEM_PROMPT,
+            "system": AI_SYSTEM_PROMPT,
             "messages": messages,
         }
     )
