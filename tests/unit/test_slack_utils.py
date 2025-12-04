@@ -7,6 +7,7 @@ from slack_utils import (
     is_text_file,
     get_file_content,
     process_files,
+    split_message,
 )
 
 
@@ -256,3 +257,33 @@ def test_process_files(mock_get_file_content):
     assert "ファイル名: test2.py" in result[1]
     assert "ファイル2の内容" in result[1]
     assert mock_get_file_content.call_count == 2
+
+
+def test_split_message_short():
+    """split_message関数が短いメッセージをそのまま返すことをテスト"""
+    text = "短いメッセージ"
+    assert split_message(text) == ["短いメッセージ"]
+
+
+def test_split_message_at_newline():
+    """split_message関数が改行位置で分割することをテスト"""
+    text = "a" * 2000 + "\n" + "b" * 2000
+    result = split_message(text, limit=3000)
+    assert len(result) == 2
+    assert result[0] == "a" * 2000
+    assert result[1] == "b" * 2000
+
+
+def test_split_message_long():
+    """split_message関数が長いメッセージを複数に分割することをテスト"""
+    text = "a" * 10000
+    result = split_message(text, limit=3000)
+    assert len(result) == 4
+
+
+@patch("slack_utils.slack_client.chat_postMessage")
+def test_send_slack_message_splits_long_message(mock_chat_post_message):
+    """send_slack_message関数が長いメッセージを分割して送信することをテスト"""
+    text = "a" * 5000
+    send_slack_message("C123", text, "123.456")
+    assert mock_chat_post_message.call_count == 2

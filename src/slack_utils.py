@@ -2,7 +2,7 @@ import logging
 import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from config import SLACK_BOT_TOKEN
+from config import SLACK_BOT_TOKEN, SLACK_MESSAGE_LIMIT
 from utils import extract_url
 from url_utils import get_url_content
 
@@ -89,11 +89,38 @@ def get_thread_history(channel_id, thread_ts):
         return []
 
 
+def split_message(text, limit=SLACK_MESSAGE_LIMIT):
+    """メッセージを指定文字数で分割（改行位置を考慮）"""
+    if len(text) <= limit:
+        return [text]
+
+    messages = []
+    while text:
+        if len(text) <= limit:
+            messages.append(text)
+            break
+
+        # 改行位置で分割を試みる
+        split_pos = text.rfind("\n", 0, limit)
+        if split_pos == -1 or split_pos < limit // 2:
+            # 改行がない場合や位置が前すぎる場合はスペースで分割
+            split_pos = text.rfind(" ", 0, limit)
+        if split_pos == -1:
+            split_pos = limit
+
+        messages.append(text[:split_pos])
+        text = text[split_pos:].lstrip()
+
+    return messages
+
+
 def send_slack_message(channel_id, text, thread_ts):
     try:
-        slack_client.chat_postMessage(
-            channel=channel_id, text=text, thread_ts=thread_ts
-        )
+        messages = split_message(text)
+        for msg in messages:
+            slack_client.chat_postMessage(
+                channel=channel_id, text=msg, thread_ts=thread_ts
+            )
     except SlackApiError as e:
         logger.error(f"Error sending message to Slack: {e}")
         raise
