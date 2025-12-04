@@ -1,4 +1,5 @@
 import logging
+import re
 import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -89,6 +90,75 @@ def get_thread_history(channel_id, thread_ts):
         return []
 
 
+def convert_markdown_to_slack_mrkdwn(text):
+    """
+    標準MarkdownをSlack mrkdwn形式に変換する
+
+    変換内容:
+    - **bold** → *bold*
+    - *italic* → _italic_
+    - ~~strikethrough~~ → ~strikethrough~
+    - ### Header → *Header* (ヘッダーを太字に)
+
+    コードブロック内は変換しない
+
+    Args:
+        text: 標準Markdown形式のテキスト
+
+    Returns:
+        Slack mrkdwn形式に変換されたテキスト
+    """
+    if not text:
+        return text
+
+    # コードブロックを一時的に保護
+    code_blocks = []
+    inline_codes = []
+
+    def preserve_fenced_code(match):
+        code_blocks.append(match.group(0))
+        return f"\x00CODEBLOCK{len(code_blocks)-1}\x00"
+
+    def preserve_inline_code(match):
+        inline_codes.append(match.group(0))
+        return f"\x00INLINECODE{len(inline_codes)-1}\x00"
+
+    # フェンスドコードブロック → インラインコード の順で保護
+    text = re.sub(r"```[\s\S]*?```", preserve_fenced_code, text)
+    text = re.sub(r"`[^`]+`", preserve_inline_code, text)
+
+    # Markdown変換
+    # ボールド: **text** → 一時的にプレースホルダーに変換
+    bold_texts = []
+
+    def preserve_bold(match):
+        bold_texts.append(match.group(1))
+        return f"\x00BOLD{len(bold_texts)-1}\x00"
+
+    text = re.sub(r"\*\*([^*]+)\*\*", preserve_bold, text)
+
+    # イタリック: *text* → _text_ (ボールド変換後に実行)
+    text = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"_\1_", text)
+
+    # ボールドを復元: プレースホルダー → *text* (Slack mrkdwn形式)
+    for i, bold_text in enumerate(bold_texts):
+        text = text.replace(f"\x00BOLD{i}\x00", f"*{bold_text}*")
+
+    # 取り消し線: ~~text~~ → ~text~
+    text = re.sub(r"~~([^~]+)~~", r"~\1~", text)
+
+    # ヘッダー: ### Header → *Header*
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
+
+    # コードブロックを復元
+    for i, block in enumerate(code_blocks):
+        text = text.replace(f"\x00CODEBLOCK{i}\x00", block)
+    for i, code in enumerate(inline_codes):
+        text = text.replace(f"\x00INLINECODE{i}\x00", code)
+
+    return text
+
+
 def split_message(text, limit=SLACK_MESSAGE_LIMIT):
     """メッセージを指定文字数で分割（改行位置を考慮）"""
     if len(text) <= limit:
@@ -116,7 +186,8 @@ def split_message(text, limit=SLACK_MESSAGE_LIMIT):
 
 def send_slack_message(channel_id, text, thread_ts):
     try:
-        messages = split_message(text)
+        converted_text = convert_markdown_to_slack_mrkdwn(text)
+        messages = split_message(converted_text)
         for msg in messages:
             slack_client.chat_postMessage(
                 channel=channel_id, text=msg, thread_ts=thread_ts

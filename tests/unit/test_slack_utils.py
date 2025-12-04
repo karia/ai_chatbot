@@ -8,6 +8,7 @@ from slack_utils import (
     get_file_content,
     process_files,
     split_message,
+    convert_markdown_to_slack_mrkdwn,
 )
 
 
@@ -287,3 +288,132 @@ def test_send_slack_message_splits_long_message(mock_chat_post_message):
     text = "a" * 5000
     send_slack_message("C123", text, "123.456")
     assert mock_chat_post_message.call_count == 2
+
+
+# convert_markdown_to_slack_mrkdwn テスト
+def test_convert_bold():
+    """ボールド(**text**)が正しく変換されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("**太字**") == "*太字*"
+    assert convert_markdown_to_slack_mrkdwn("これは**太字**です") == "これは*太字*です"
+
+
+def test_convert_italic():
+    """イタリック(*text*)が正しく変換されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("*斜体*") == "_斜体_"
+    assert convert_markdown_to_slack_mrkdwn("これは*斜体*です") == "これは_斜体_です"
+
+
+def test_convert_bold_and_italic():
+    """ボールドとイタリックが混在する場合に正しく変換されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("**太字**と*斜体*") == "*太字*と_斜体_"
+
+
+def test_convert_strikethrough():
+    """取り消し線(~~text~~)が正しく変換されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("~~削除~~") == "~削除~"
+    assert convert_markdown_to_slack_mrkdwn("これは~~削除~~です") == "これは~削除~です"
+
+
+def test_convert_header():
+    """ヘッダー(### text)が太字に変換されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("### 見出し") == "*見出し*"
+    assert convert_markdown_to_slack_mrkdwn("# H1見出し") == "*H1見出し*"
+    assert convert_markdown_to_slack_mrkdwn("###### H6見出し") == "*H6見出し*"
+
+
+def test_convert_header_multiline():
+    """複数行のヘッダーが正しく変換されることをテスト"""
+    input_text = "## 見出し1\n本文\n### 見出し2"
+    expected = "*見出し1*\n本文\n*見出し2*"
+    assert convert_markdown_to_slack_mrkdwn(input_text) == expected
+
+
+def test_preserve_inline_code():
+    """インラインコード内が変換されないことをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("`**code**`") == "`**code**`"
+    assert convert_markdown_to_slack_mrkdwn("`*italic*`") == "`*italic*`"
+
+
+def test_preserve_fenced_code_block():
+    """フェンスドコードブロック内が変換されないことをテスト"""
+    input_text = "```\n**bold** in code\n```"
+    assert convert_markdown_to_slack_mrkdwn(input_text) == input_text
+
+
+def test_preserve_code_with_surrounding_text():
+    """コードブロック外のテキストのみ変換されることをテスト"""
+    input_text = "**太字** `**コード内**` **また太字**"
+    expected = "*太字* `**コード内**` *また太字*"
+    assert convert_markdown_to_slack_mrkdwn(input_text) == expected
+
+
+def test_convert_empty_string():
+    """空文字列が正しく処理されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn("") == ""
+
+
+def test_convert_none():
+    """Noneが正しく処理されることをテスト"""
+    assert convert_markdown_to_slack_mrkdwn(None) is None
+
+
+def test_convert_no_conversion_needed():
+    """変換対象がない場合にテキストがそのまま返されることをテスト"""
+    text = "普通のテキスト"
+    assert convert_markdown_to_slack_mrkdwn(text) == text
+
+
+def test_convert_links_unchanged():
+    """Markdownリンクが変更されないことをテスト"""
+    text = "[リンクテキスト](https://example.com)"
+    assert convert_markdown_to_slack_mrkdwn(text) == text
+
+
+def test_convert_blockquotes_unchanged():
+    """引用が変更されないことをテスト"""
+    text = "> これは引用です"
+    assert convert_markdown_to_slack_mrkdwn(text) == text
+
+
+def test_convert_lists_unchanged():
+    """リストが変更されないことをテスト"""
+    text = "- item1\n- item2"
+    assert convert_markdown_to_slack_mrkdwn(text) == text
+
+
+def test_convert_real_world_example():
+    """実際のClaudeレスポンス例が正しく変換されることをテスト"""
+    input_text = (
+        "**打開のポイントは「受け身から主導権を取り戻す」こと**\n\n具体的には："
+    )
+    expected = "*打開のポイントは「受け身から主導権を取り戻す」こと*\n\n具体的には："
+    assert convert_markdown_to_slack_mrkdwn(input_text) == expected
+
+
+def test_convert_complex_example():
+    """複雑なMarkdownが正しく変換されることをテスト"""
+    input_text = """## まとめ
+
+**重要なポイント**は以下の通りです：
+
+1. *イタリック*のテキスト
+2. ~~取り消し線~~のテキスト
+3. `コード`は変換されない
+
+```python
+# **コメント**も変換されない
+print("hello")
+```"""
+    expected = """*まとめ*
+
+*重要なポイント*は以下の通りです：
+
+1. _イタリック_のテキスト
+2. ~取り消し線~のテキスト
+3. `コード`は変換されない
+
+```python
+# **コメント**も変換されない
+print("hello")
+```"""
+    assert convert_markdown_to_slack_mrkdwn(input_text) == expected
