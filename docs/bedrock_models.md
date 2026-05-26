@@ -67,6 +67,31 @@ gh pr create --title "Update AI model to Claude Opus 4.x" --body "..."
 
 > **注意:** `git -C <path>` や `cd <path> && git ...` のようなパス指定は使用しないこと（CLAUDE.md 参照）。作業前に `pwd` で CWD を確認してから素の git コマンドを実行すること。
 
+### 6. デプロイ
+
+リポジトリルートにある `function-*.json` を全てデプロイする：
+
+```bash
+for f in function-*.json; do
+  bash deploy.sh "$f"
+done
+```
+
+## トラブルシューティング
+
+### AccessDeniedException: INVALID_PAYMENT_INSTRUMENT
+
+新しいモデルを初めて使用する際に以下のエラーが出る場合がある：
+
+```
+An error occurred (AccessDeniedException) when calling the InvokeModel operation:
+Model access is denied due to INVALID_PAYMENT_INSTRUMENT
+```
+
+**原因:** AWS アカウントに有効な支払い方法が登録されていないと、新モデルへのアクセスが拒否される。
+
+**対処:** AWS コンソールで支払い方法を確認・更新してから再デプロイする。
+
 ## モデル更新履歴
 
 | 日付 | モデル ID | 変更理由 |
