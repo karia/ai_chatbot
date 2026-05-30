@@ -99,3 +99,4 @@ Model access is denied due to INVALID_PAYMENT_INSTRUMENT
 | 2025-09-30 | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` | Claude Sonnet 4.5 に更新 |
 | 2025-12-05 | `global.anthropic.claude-opus-4-5-20251101-v1:0` | より高性能な Opus 4.5 に更新 |
 | 2026-05-27 | `global.anthropic.claude-opus-4-7` | より高性能な Opus 4.7 に更新 |
+| 2026-05-30 | `global.anthropic.claude-opus-4-8` | より高性能な Opus 4.8 に更新 |
