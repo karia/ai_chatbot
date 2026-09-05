@@ -4,6 +4,11 @@
 
 このREADMEを含め、ほとんどのソースコードはAI生成です。
 
+## 次期アーキテクチャの検討
+
+再構築案は[ADR-0001: LambdaとStrands AgentsによるSlackチャットボットの再構築](docs/adr/0001-serverless-strands-chatbot.md)に記録しています。
+ADRは提案段階です。以下は現行実装の説明です。
+
 ## アーキテクチャ
 
 このチャットボットは以下のAWSサービスを使用しています：
