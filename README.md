@@ -4,6 +4,15 @@
 
 このREADMEを含め、ほとんどのソースコードはAI生成です。
 
+## 次期アーキテクチャの検討
+
+ADR-001とADR-002で2案を比較しています。いずれも提案段階です。
+
+- [ADR-001：AWS中心案：LambdaとStrands AgentsによるSlackチャットボット](docs/adr/001-serverless-strands-chatbot.md)
+- [ADR-002：ハイブリッド案：k3sとAWSによるSlack／Discordチャットボット](docs/adr/002-hybrid-k3s-strands-chatbot.md)
+
+以下は現行実装の説明です。
+
 ## アーキテクチャ
 
 このチャットボットは以下のAWSサービスを使用しています：
