@@ -6,8 +6,12 @@
 
 ## 次期アーキテクチャの検討
 
-再構築案は[ADR-0001: LambdaとStrands AgentsによるSlackチャットボットの再構築](docs/adr/0001-serverless-strands-chatbot.md)に記録しています。
-ADRは提案段階です。以下は現行実装の説明です。
+ADR-0001には比較用の2案があります。いずれも提案段階です。
+
+- [AWS中心案：LambdaとStrands AgentsによるSlackチャットボット](docs/adr/0001-serverless-strands-chatbot.md)
+- [ハイブリッド案：k3sとAWSによるSlack／Discordチャットボット](docs/adr/0001-hybrid-k3s-strands-chatbot.md)
+
+以下は現行実装の説明です。
 
 ## アーキテクチャ
 
