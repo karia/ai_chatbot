@@ -32,6 +32,79 @@ DM、Slash Commands、一般メッセージの全件取り込み、書き込み�
 既存スレッドの過去履歴も初期移行では取り込まず、新しいスレッドから利用を開始する。
 この差分を利用案内と受け入れテストに含める。
 
+## 追加案：Discord Gatewayだけをk3sへ配置
+
+Discordの通常投稿とメンションを追加する場合は、Gatewayの常駐接続と受信イベントのSQS投入をk3sの専用Deploymentで行う。
+SlackのHTTP受付はAPI Gatewayと受付Lambda、共通会話処理と返信はワーカーLambdaで実行する。
+ECSは利用せず、k3sの担当範囲をDiscordの受信アダプターに限定する。
+
+```mermaid
+flowchart LR
+    Slack[Slack Events API] --> API[API Gateway] --> Receiver[受付Lambda]
+    Discord[Discord Gateway] <-->|外向きWebSocket| Gateway[k3s: Discord受信アダプター]
+    Receiver --> Queue[SQS FIFO]
+    Gateway --> Queue
+    Gateway <--> Cursor[DynamoDB: 走査カーソルと照合状態]
+    Queue --> Worker[ワーカーLambda: Strandsと返信アダプター]
+    Worker --> Bedrock[Bedrock]
+    Worker <--> Memory[AgentCore Memory]
+    Worker <--> State[DynamoDB: 処理状態]
+    Worker --> REST[SlackとDiscordの返信API]
+    Worker -. ファイル保存を追加する場合 .-> S3[S3]
+```
+
+### 責務とイベント契約
+
+| 項目 | 配置と責務 |
+| --- | --- |
+| Discord Gateway | k3sでHeartbeat、Resume、対象イベント選別、正規化、SQS送信 |
+| 履歴照合 | k3sからDiscord REST APIを読み、DynamoDBへ走査カーソルと照合状態を保存 |
+| 非同期配送 | SQS FIFOとLambdaイベントソースマッピング |
+| 推論とツール | ワーカーLambdaでStrands Agentsを実行 |
+| 返信 | ワーカーLambdaからDiscord REST APIへ直接投稿 |
+| 会話と処理状態 | AgentCore MemoryとDynamoDB |
+| 永続ファイル | 必要に応じてS3 |
+
+SlackとDiscordのイベントは[ADR-002の共通イベント契約](002-hybrid-k3s-strands-chatbot.md#マルチアダプターの契約)へ揃える。
+以下のSlack専用キュー契約を拡張し、`platform`、`installation_id`、`tenant_id`を会話キーと重複排除キーに含める。
+Memoryのactorとsession、DynamoDBのキーも同じ境界で分離し、プラットフォーム間のID衝突を防ぐ。
+Slackのchannel、thread timestampとDiscordのchannel、message IDは型付きの`reply_target`で区別する。
+
+Gatewayは`SendMessage`成功後にだけ走査カーソルを進め、結果不明時は同じキーで再送する。
+ワーカーLambdaがSQSを処理するため、k3s側にキューの受信ループや返信待ちキューは置かない。
+Lambdaのイベントソースマッピングが受信と成功後の削除を管理する。[LambdaとSQS](https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html)
+本ADRのバッチサイズ1、可視性720秒、ワーカー120秒、最大同時実行数5を使用する。
+ADR-002のk3sワーカー用ポーリング、可視性180秒、同時2会話の設定は適用しない。
+
+返信アダプターはLambda内でplatformに応じて切り替える。
+Discord向けの2,000文字以内の分割、`allowed_mentions`、元投稿への参照、投稿ID保存、429への再試行は[ADR-002の返信契約](002-hybrid-k3s-strands-chatbot.md#アダプター境界)に従う。
+Bot単位とルート単位のレート制限はDynamoDBで複数Lambda間に共有する。
+投稿結果不明時の隔離と再処理は本ADRの状態遷移に従い、Discordの投稿IDをSlackのtsに相当する照合情報として保存する。
+
+### Gatewayの運用と障害境界
+
+Gatewayは1レプリカ、更新戦略Recreateとし、discord.pyのバージョンを固定する。
+許可サーバーとチャンネル、通常投稿とメンションの選別、Message Content Intent、50回答上限、参加者への保存案内は[ADR-002のDiscord受信設計](002-hybrid-k3s-strands-chatbot.md#discordの通常メッセージとメンション)と[参加者への案内](002-hybrid-k3s-strands-chatbot.md#参加者への案内)に従う。
+Discordからの接続は外向きであり、このPod用の公開URLやIngressは不要となる。[Discord Gateway](https://docs.discord.com/developers/events/gateway)
+
+AWS認証には[ADR-002のIAM Roles Anywhere案](002-hybrid-k3s-strands-chatbot.md#k3sからのaws認証)を利用する。
+Gatewayの権限は対象SQSへの送信とDynamoDBの走査カーソル、履歴照合状態の操作に限定する。
+BedrockやMemory、キューの受信と削除はLambda実行ロールの責務とする。
+Discord Bot TokenはGatewayのKubernetes Secretと返信Lambdaが読むSecrets Managerに配置し、同じBotのトークン更新を両方へ反映する。
+
+10分以内の断絶は履歴回収と新着待機をそれぞれ1チャンネル1,000件まで行い、照合中はDynamoDBの停止状態をLambdaも確認する。
+回収と新着の投入順、カーソル更新、上限超過時の扱いは[ADR-002の再接続手順](002-hybrid-k3s-strands-chatbot.md#接続と再接続)に従う。
+10分を超える停止は未投入分の完全回収を保証せず、既存ジョブと返信状態を照合して利用者に再投稿を案内する。
+
+k3s停止中もSlack受付とSQS投入済みの推論、Discordへの返信はAWS側で継続できる。
+ただし、履歴照合中のまま停止したDiscord会話は、停止状態の確認と解除まで保留となる。
+DLQは本ADRのイベントソース停止と復旧手順で扱う。
+Gatewayの接続、最終SQS送信、AWS認証を既存PrometheusとLokiで監視し、クラスタ全停止は外部監視で検知する。
+
+導入時には共通イベント契約、返信アダプター、AWS権限を先に整え、その後Gatewayを許可したチャンネルで有効化する。
+受け入れ試験では、k3s停止中のSlack応答と投入済みDiscord返信の継続、再接続時の重複、ID衝突、トークン更新、429と投稿結果不明からの復旧を確認する。
+ロールバックはGatewayの新規投入を止め、SQSに残る共通イベントを読めるLambdaを維持して残件を処理する。
+
 ## 採用判断の記録
 
 採用判断は未決定とする。
@@ -505,27 +578,31 @@ CloudWatchは集約したカスタムメトリクス5個、標準アラーム8�
 外向き転送には無料枠控除前の東京単価を使う。[転送の東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/ap-northeast-1/index.json)
 S3を追加し、平均1 GB、月100 PUTと100 GETを使う場合は、`0.025 + 100 × 0.0000047 + 100 × 0.00000037 = USD 0.025507/月`を加算する。[S3の東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.json)
 
-### Discord GatewayをAWSで常駐させる場合
+### Discord Gatewayだけをk3sで常駐させる場合
 
-同じ機能範囲で比較するため、Linux／x86のFargateタスクを0.25 vCPU、0.5 GBメモリで1個、720時間稼働させる参考構成を置く。
-公開サブネットから外向き接続し、公開IPv4を1個使用する。
-受信用ALBとNAT Gatewayは置かず、セキュリティグループでは外部からの着信を許可しない。
+既存のk3sホストと回線を使用し、Gatewayのログとメトリクスは既存のPrometheusとLokiへ保存する。
+AWS側には返信Lambdaが取得するDiscord Bot Tokenを1秘密値、月100回の取得として追加する。
+IAM Roles Anywhereは自己管理CAを使い、サービスの追加料金を0とする。
+DynamoDBのカーソル更新は基本表の計算枠内に含め、導入後に実測する。
 
 | 追加費目 | 月間計算 | 月額 USD |
 | --- | --- | ---: |
-| Fargate CPU | 0.25 × 720 × 0.05056 | 9.10080 |
-| Fargateメモリ | 0.5 × 720 × 0.00553 | 1.99080 |
-| 公開IPv4 | 720 × 0.005 | 3.60000 |
-| Discord Bot Token | 1秘密値と100回の取得 | 0.40050 |
-| Gatewayログ | 取り込み0.01 GBと保存0.005 GB | 0.00777 |
-| 追加合計 | 丸め前の金額を合算 | 15.09987 |
+| Discord Bot Token | 0.40 + 100 × 0.000005 | 0.40050 |
+| IAM Roles Anywhere | 自己管理CA | 0.00000 |
+| AWS側の追加合計 | 上記の合算 | 0.40050 |
 
-単価は[Fargateの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/ap-northeast-1/index.json)と[公開IPv4料金](https://aws.amazon.com/vpc/pricing/)に基づく。
-これは費用比較用の構成であり、AWS中心案へDiscordを正式追加する場合はGatewayの受信復旧を別途設計する。
+Secrets Managerには[東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-northeast-1/index.json)を使用する。
+CAを別途契約する場合は固定費を追加する。[IAM Roles Anywhereの料金案内](https://aws.amazon.com/about-aws/whats-new/2022/07/aws-identity-access-management-iam-roles-anywhere-workloads-outside-aws/)
 
-月間300回の回答を両プラットフォームで分け合うので、モデル費用は二重計上しない。
-受付の微小な費用は全300件がSlack経由という基本表を据え置き、上限寄りに比較する。
-この条件ではSlackのみで約USD 18.01/月、Discord常駐を追加すると約USD 33.11/月となる。
+月間300回の回答を両プラットフォームで分け合い、モデルとSQSの費用は基本表の枠内で計上する。
+受付費用は全300件がSlack経由という基本表を据え置く保守的な比較とし、Discord受信分の受付LambdaとHTTP APIの減少は控除しない。
+SQSの受信はLambdaが管理するため、Gateway用の空ポーリング費用は追加しない。
+AWS側は`USD 18.0118398005 + 0.40050 = 約USD 18.41/月`となる。
+
+Gatewayと監視の増分電力に5 W、電力単価に35円/kWhの仮定を置くと、`5 ÷ 1,000 × 720 × 35 = 126円/月`となる。
+1 USD＝150円の比較用換算では、`18.4123398005 + 126 ÷ 150 = 約USD 19.25/月`となる。
+ADR-002も同じ5 Wの計算枠を使用しており、Gatewayだけの場合の省電力効果は実測まで織り込まない。
+既存ホストと回線の新設費用、証明書運用、設備増設は別途加算する。
 
 金額には開発と運用の人件費、既存Slack／Discord契約、CIとイメージ保管、独自ドメイン、任意の追加バックアップや顧客管理KMSキーを含めない。
 無料枠が残っていればLambda、SQS、CloudWatch等の実請求は下がる。
