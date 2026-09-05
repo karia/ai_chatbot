@@ -396,3 +396,130 @@ Slackの受付を推論時間から分離でき、会話の永続化をマネー
 一方、Memory、DynamoDB、Slack間の部分成功はアプリケーションが扱う必要がある。
 初期版では不明な実行を隔離する運用負担を受け入れ、重複実行を伴う自動復旧の範囲を限定する。
 将来の長時間処理、全スレッド履歴の取り込み、マルチエージェント、書き込み系ツールは、それぞれの制約を確認する追加ADRで決定する。
+
+## コスト試算：1日2会話、各5往復、Claude Opus 5
+
+料金確認日は2026-09-06とする。
+1か月を30日とし、SlackとDiscordを合わせて1日2会話、1会話につき利用者の発言とBotの回答を5往復する。
+月間では60会話、300回の回答となる。
+会話ごとに新しいセッションを開始し、基本ケースでは1回答につき1回のモデル呼び出しを行う。
+
+### 共通の計算条件
+
+| 項目 | 仮定 |
+| --- | --- |
+| モデル | Claude Opus 5 |
+| 推論方式 | StandardのGlobal Cross-Region |
+| 基盤のリージョン | ap-northeast-1 |
+| システムプロンプト | 1,000トークン/呼び出し |
+| 利用者の新規入力 | 500トークン/往復 |
+| モデルの出力 | thinkingを含む課金対象の合計1,000トークン/往復 |
+| 会話履歴 | 同じ会話の過去の入出力を毎回再入力 |
+| キャッシュ割引 | 計上しない |
+| ツール実行と再試行 | 基本ケースには含めない |
+| 添付と生成ファイル | 基本ケースには含めない |
+| 税と為替 | USDの税抜額を基準とする |
+| 無料枠とクレジット | 利用者ごとの残量が不明なため控除しない |
+
+Opus 5の標準料金は入力100万トークン当たりUSD 5、出力100万トークン当たりUSD 25を使用する。[AnthropicのOpus 5提供案内](https://www.anthropic.com/news/claude-opus-5)
+東京の`bedrock-runtime`からは`global.anthropic.claude-opus-5`を使う条件で算定する。
+この呼び出しは東京内に処理を限定しないため、本番採用時にデータ処理先を確認する。[BedrockのOpus 5モデル仕様](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-5.html)
+
+出力の1,000トークンは表示される回答だけの長さではない。
+thinking等の課金対象もこの枠に含め、過去の出力を全量再入力する保守的な計算にする。
+実際に再入力されないthinkingやキャッシュヒットは費用を下げ、長い添付、追加のモデル呼び出し、再試行は費用を上げる。
+
+### 推論費用の計算
+
+n往復目の入力は`1,000 + 500 × n + 1,000 × (n − 1)`トークンとなる。
+
+| 往復目 | 入力トークン数 | 出力トークン数 |
+| --- | ---: | ---: |
+| 1 | 1,500 | 1,000 |
+| 2 | 3,000 | 1,000 |
+| 3 | 4,500 | 1,000 |
+| 4 | 6,000 | 1,000 |
+| 5 | 7,500 | 1,000 |
+| 1会話の合計 | 22,500 | 5,000 |
+
+月間入力は`22,500 × 60 = 1,350,000`、月間出力は`5,000 × 60 = 300,000`トークンとなる。
+推論費用は`1.35 × USD 5 + 0.30 × USD 25 = USD 14.25/月`、1会話当たりUSD 0.2375である。
+
+### 回答量による推論費用の差
+
+各ケースで過去の出力を全量再入力し、システムプロンプトと利用者入力は固定する。
+
+| 1往復の出力トークン数 | 月間推論費用 USD |
+| ---: | ---: |
+| 500 | 9.00 |
+| 1,000 | 14.25 |
+| 2,048 | 25.25 |
+
+AgentCore Memoryはユーザー発言と回答を別イベントとして保存する仮定で、`60 × 5 × 2 = 600`イベントとなる。
+短期記憶のUSD 0.25/1,000イベントから、`600 ÷ 1,000 × 0.25 = USD 0.15/月`を計上する。
+SDKが追加イベントを作成する場合は実測値で更新する。
+長期記憶は無効とする。[AgentCore料金](https://aws.amazon.com/bedrock/agentcore/pricing/)
+
+DynamoDBはトランザクション、項目サイズ、リース更新を含め、1回答当たり100 WRUと10 RRUの計算枠を置く。
+月間30,000 WRU、3,000 RRU、保存0.01 GBとして、`30,000 × 0.000000715 + 3,000 × 0.0000001425 + 0.01 × 0.285 = USD 0.02473/月`となる。
+この枠は固定のAPI呼び出し回数を意味せず、実装後にConsumedCapacityで置き換える。[DynamoDBの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/current/ap-northeast-1/index.json)
+
+### AWS中心案の月額
+
+受付Lambdaは256 MiBで平均0.2秒、ワーカーは1 GiBで平均30秒、各300回を仮定する。
+予約済み同時実行数の設定には常時起動の費用を加えず、Provisioned ConcurrencyとイベントソースのProvisioned Modeは無効とする。
+
+| 費目 | 月間計算 | 月額 USD |
+| --- | --- | ---: |
+| Opus 5 | 共通の推論計算 | 14.25000 |
+| AgentCore Memory | 600イベント | 0.15000 |
+| DynamoDB | 30,000 WRU、3,000 RRU、0.01 GB | 0.02473 |
+| Lambda | 9,015 GB秒と600リクエスト | 0.15037 |
+| HTTP API | 300 × 0.00000129 | 0.00039 |
+| SQS FIFO | 648,900 × 0.0000005 | 0.32445 |
+| Secrets Manager | 2秘密値 × 0.40 + 600取得 × 0.000005 | 0.80300 |
+| CloudWatch | 下記のメトリクス、アラーム、ログ | 2.30777 |
+| 外向き転送 | 0.01 GB × 0.114 | 0.00114 |
+| S3 | ファイル保存を追加するまで0 | 0.00000 |
+| 合計 | 丸め前の金額を合算 | 18.01184 |
+
+LambdaにはUSD 0.0000166667/GB秒とUSD 0.20/100万リクエスト、HTTP APIにはUSD 1.29/100万リクエストを使用した。[Lambdaの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/ap-northeast-1/index.json)、[API Gatewayの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/ap-northeast-1/index.json)
+
+SQSには送信、受信、削除の900回に、待機中の空ポーリングを加える。
+20秒のlong pollingが5本動く仮定では、`5 × 30 × 86,400 ÷ 20 = 648,000`回となる。
+これは見積もり用の仮定であり、Lambda管理下のポーリング数や課金額の上限を保証する値ではない。
+ペイロードは64 KiB以下とし、FIFOのUSD 0.50/100万リクエストを使う。[SQSの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSQueueService/current/ap-northeast-1/index.json)
+
+CloudWatchは集約したカスタムメトリクス5個、標準アラーム8個、ログ取り込み0.01 GB、平均ログ保存0.005 GBを仮定する。
+`5 × 0.30 + 8 × 0.10 + 0.01 × 0.76 + 0.005 × 0.033 = USD 2.307765/月`となる。
+イベントIDをメトリクスのdimensionに使わず、メトリクス数の増加を防ぐ。[CloudWatchの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-1/index.json)
+
+秘密値はSigning SecretとSlack Bot Tokenの2件とする。[Secrets Managerの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-northeast-1/index.json)
+外向き転送には無料枠控除前の東京単価を使う。[転送の東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/ap-northeast-1/index.json)
+S3を追加し、平均1 GB、月100 PUTと100 GETを使う場合は、`0.025 + 100 × 0.0000047 + 100 × 0.00000037 = USD 0.025507/月`を加算する。[S3の東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.json)
+
+### Discord GatewayをAWSで常駐させる場合
+
+同じ機能範囲で比較するため、Linux／x86のFargateタスクを0.25 vCPU、0.5 GBメモリで1個、720時間稼働させる参考構成を置く。
+公開サブネットから外向き接続し、公開IPv4を1個使用する。
+受信用ALBとNAT Gatewayは置かず、セキュリティグループでは外部からの着信を許可しない。
+
+| 追加費目 | 月間計算 | 月額 USD |
+| --- | --- | ---: |
+| Fargate CPU | 0.25 × 720 × 0.05056 | 9.10080 |
+| Fargateメモリ | 0.5 × 720 × 0.00553 | 1.99080 |
+| 公開IPv4 | 720 × 0.005 | 3.60000 |
+| Discord Bot Token | 1秘密値と100回の取得 | 0.40050 |
+| Gatewayログ | 取り込み0.01 GBと保存0.005 GB | 0.00777 |
+| 追加合計 | 丸め前の金額を合算 | 15.09987 |
+
+単価は[Fargateの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/ap-northeast-1/index.json)と[公開IPv4料金](https://aws.amazon.com/vpc/pricing/)に基づく。
+これは費用比較用の構成であり、AWS中心案へDiscordを正式追加する場合はGatewayの受信復旧を別途設計する。
+
+月間300回の回答を両プラットフォームで分け合うので、モデル費用は二重計上しない。
+受付の微小な費用は全300件がSlack経由という基本表を据え置き、上限寄りに比較する。
+この条件ではSlackのみで約USD 18.01/月、Discord常駐を追加すると約USD 33.11/月となる。
+
+金額には開発と運用の人件費、既存Slack／Discord契約、CIとイメージ保管、独自ドメイン、任意の追加バックアップや顧客管理KMSキーを含めない。
+無料枠が残っていればLambda、SQS、CloudWatch等の実請求は下がる。
+一方、Provisioned Concurrency、長い推論、追加ツール、添付の取り込み、再試行を有効にした場合は再計算する。
