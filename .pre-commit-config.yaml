@@ -1,4 +1,12 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-merge-conflict
+
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.109.1
     hooks:
