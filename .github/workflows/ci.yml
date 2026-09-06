@@ -17,11 +17,16 @@ jobs:
       AWS_SECRET_ACCESS_KEY: testing
       AWS_DEFAULT_REGION: us-east-1
     outputs:
-      has-template: ${{ steps.template.outputs.exists }}
+      has-terraform: ${{ steps.terraform.outputs.exists }}
     steps:
       - uses: actions/checkout@v6
-      - id: template
-        run: echo "exists=${{ hashFiles('template.yaml') != '' }}" >> "$GITHUB_OUTPUT"
+      - id: terraform
+        run: |
+          if [ -d terraform ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -55,14 +60,23 @@ jobs:
   iac:
     name: IaC validation
     needs: tests
-    if: needs.tests.outputs.has-template == 'true'
+    if: needs.tests.outputs.has-terraform == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v7
+      - uses: jdx/mise-action@v4
         with:
-          python-version: '3.13'
-      - uses: aws-actions/setup-sam@v3
-      - run: sam validate --lint
-        env:
-          AWS_DEFAULT_REGION: us-east-1
+          install_args: terraform tflint
+      - run: terraform -chdir=terraform fmt -check -recursive
+      - run: terraform -chdir=terraform init -backend=false
+      - run: terraform -chdir=terraform validate
+      - run: tflint --init --config=.tflint.hcl
+        working-directory: terraform
+      - run: tflint --config=.tflint.hcl
+        working-directory: terraform
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: terraform/
+          exit-code: '1'
