@@ -1,6 +1,6 @@
 # ADR-002: k3sとAWSによるSlack／Discordチャットボットの再構築
 
-- 状態：Proposed
+- 状態：Rejected（[ADR-001を採用](001-serverless-strands-chatbot.md#採用判断の記録)）
 - 作成日：2026-09-06
 - 比較対象：[AWS中心案](001-serverless-strands-chatbot.md)
 - 対象：Discord Gatewayを常駐接続するマルチアダプター構成
@@ -35,9 +35,11 @@ PostgreSQLのジョブテーブルも配送制御の実装とDBバックアッ�
 
 ## 採用判断の記録
 
-採用判断は未決定とする。
-両案の受け入れ条件、停止許容範囲、同じ機能範囲での費用を比較し、選定時に本節へ決定日、採用案、理由を記録する。
-採用したADRの状態をAcceptedに更新し、もう一方にも選定結果への参照を残す。
+- 決定日：2026-09-06
+- 採用案：[ADR-001](001-serverless-strands-chatbot.md#採用判断の記録)
+
+同じ利用量での月額差はSlackのみでUSD 2.68、Discord込みでUSD 3.92であり、ホスト保守、IAM Roles Anywhereの証明書運用、長期保存ファイルを扱う場合のMinIOのバックアップを増やす理由としては小さい。
+本案は数時間の停止と受信欠落の許容を前提とするため、Slackの受付と投入済みジョブの処理をホスト保守から切り離せるADR-001をAcceptedとし、本案をRejectedとする。
 
 ## AWS中心案との比較
 
