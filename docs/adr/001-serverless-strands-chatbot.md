@@ -447,9 +447,14 @@ IAM、DynamoDB、SQS、API Gateway、Secrets Manager、CloudWatchなどのリソ
 lambrollの関数定義はjsonnetで記述し、環境変数はTerraformのoutputから渡す。
 Makefileでは、`terraform apply`を実行する`deploy-infra`と、`lambroll deploy`を実行する`deploy-app`を分ける。
 tfstateはnative S3 lockingを有効にしたS3バックエンドに保存し、バケット名はリポジトリに置かず、git管理外のbackend設定ファイルから注入する。
-<!-- TODO: Terraformでの管理経路の確認結果を反映する -->
-MemoryはCloudFormationのリソース定義を使用する。
-採用するリージョンでスタック作成・更新・保持設定を先行検証し、追加するAgentCore機能にも同じ検証を適用する。
+MemoryはTerraformのhashicorp/aws providerの`aws_bedrockagentcore_memory`で管理する。
+providerのバージョン制約は`~> 6.0`とし、6.18.0以降をlockファイルで固定する。
+短期記憶の保持日数はMemory本体で管理し、長期記憶の抽出戦略は別リソースで表す。
+初期構成では抽出戦略のリソースを作成せず、長期記憶の抽出を行わない。
+管理属性のdriftを検知できるが、外部から追加された未管理の抽出戦略はMemory本体のplanでは検知できない。
+provider固有の問題が生じた場合はawscc providerの専用リソースを代替とする。
+汎用の`aws_cloudcontrolapi_resource`はimportと通常のdrift修復に対応しないため、代替には使用しない。
+採用するリージョンでリソースのライフサイクル、保持設定とdrift検知を先行検証し、追加するAgentCore機能にも同じ検証を適用する。
 このADRの変更は文書に限定し、現行のデプロイ動作を維持する。
 
 受付パッケージにはStrandsを含めず、ワーカーの依存関係をロックする。
