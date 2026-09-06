@@ -62,10 +62,9 @@ def _public_address(address):
 
 
 def _log(level, **fields):
-    threshold = logging.getLevelNamesMapping().get(
-        os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO
-    )
-    if logging.getLevelNamesMapping()[level] >= threshold:
+    levels = logging.getLevelNamesMapping()
+    threshold = levels.get(os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    if levels[level] >= threshold:
         print(json.dumps({"level": level, "tool": "reader", **fields}))
 
 
@@ -108,7 +107,7 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
                     return socket.socket(
                         address.family, address.socktype, address.protocol
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 - callbacks must return libcurl failure codes
                     callback_reason = "connection_failed"
                     return pycurl.SOCKET_BAD
 
