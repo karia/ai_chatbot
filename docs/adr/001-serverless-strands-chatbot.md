@@ -321,7 +321,7 @@ Lambda強制終了時のflushは保証されない。[StrandsのAgentCore Memory
 環境ごとにMemoryリソースを分離する。
 
 初期版は短期記憶を30日保持し、長期記憶の抽出は無効にする。
-CloudFormationの`AWS::BedrockAgentCore::Memory`で`EventExpiryDuration=30`を指定し、`MemoryStrategies`を設定しない。[MemoryのCloudFormation定義](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-memory.html)
+Terraformの`aws_bedrockagentcore_memory`で`event_expiry_duration`を30に設定し、長期記憶の抽出戦略のリソースは作成しない。[MemoryのTerraformリソース定義](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/bedrockagentcore_memory)
 スレッドをまたぐユーザー嗜好の共有には、共有範囲と削除要件の追加設計が必要である。
 後から長期記憶を有効にする場合は、まずスレッド単位の要約に限定し、namespaceをactorとsessionで分離する。
 長期記憶の検索結果を認可判断や処理完了の根拠にはしない。
@@ -441,19 +441,34 @@ Slack連携の知見、テストケース、変更履歴を活用でき、アプ
 新規リポジトリは、所有者・公開範囲・リリース周期を分離する必要が生じた場合に選択する。
 
 次期実装は専用パッケージに受付、ワーカー、会話サービス、ツール、外部サービスのアダプターを分けて置く。
-インフラはAWS SAMとCloudFormationで管理する案とし、既存のlambrollによる単一関数デプロイから、キュー・権限・保存先を含むスタックへ移行する。
-MemoryはCloudFormationのリソース定義を使用する。
-採用するリージョンでスタック作成・更新・保持設定を先行検証し、追加するAgentCore機能にも同じ検証を適用する。
+インフラはTerraformで管理し、関数コードの配布はlambrollが担う。
+既存のlambrollによる単一関数デプロイを継続し、キュー・権限・保存先を含むインフラ定義を`terraform/`へ追加する。
+IAM、DynamoDB、SQS、API Gateway、Secrets Manager、CloudWatchなどのリソースとLambda本体をTerraformで作成し、Lambdaの初回作成にはダミーzipを使用する。
+lambrollの関数定義はjsonnetで記述し、環境変数はTerraformのoutputから渡す。
+Makefileでは、`terraform apply`を実行する`deploy-infra`と、`lambroll deploy`を実行する`deploy-app`を分ける。
+tfstateはnative S3 lockingを有効にしたS3バックエンドに保存し、バケット名はリポジトリに置かず、git管理外のbackend設定ファイルから注入する。
+MemoryはTerraformのhashicorp/aws providerの`aws_bedrockagentcore_memory`で管理する。
+providerのバージョン制約は`>= 6.18.0, < 7.0.0`とする。
+lockファイルでは、この制約を満たすうち実際に使用する1バージョンを固定する。
+短期記憶の保持日数はMemory本体で管理し、長期記憶の抽出戦略は別リソースで表す。
+初期構成では抽出戦略のリソースを作成せず、長期記憶の抽出を行わない。
+管理属性のdriftを検知できるが、外部から追加された未管理の抽出戦略はMemory本体のplanでは検知できない。
+provider固有の問題が生じた場合はawscc providerの専用リソースを代替とする。
+汎用の`aws_cloudcontrolapi_resource`はimportと通常のdrift修復に対応しないため、代替には使用しない。
+採用するリージョンでリソースのライフサイクル、保持設定とdrift検知を先行検証し、追加するAgentCore機能にも同じ検証を適用する。
 このADRの変更は文書に限定し、現行のデプロイ動作を維持する。
 
 受付パッケージにはStrandsを含めず、ワーカーの依存関係をロックする。
-開発環境と本番環境でスタック、キュー、テーブル、Memory、秘密値を分ける。
-CIは単体テスト、依存関係と秘密情報の検査、IaC検証を行い、本番デプロイにはGitHub ActionsのOIDCと限定したロールを使用する。
-Lambdaのバージョンとエイリアスでロールバック可能にする。
+開発環境と本番環境でTerraformの構成とtfstate、キュー、テーブル、Memory、秘密値を分ける。
+`.mise.toml`でterraform、tflint、lambroll、aws-cliのバージョンを固定し、CIとローカルで揃える。
+CIは単体テスト、依存関係と秘密情報の検査、IaC検証を行う。
+IaC検証では`terraform/`を対象に`terraform fmt -check -recursive`、`terraform init -backend=false`、`terraform validate`、`tflint`、`trivy config .`を実行する。
+本番デプロイにはGitHub ActionsのOIDCと限定したロールを使用する。
+lambrollでLambdaのバージョンとエイリアスを管理し、ロールバック可能にする。
 
 ## 導入手順と受け入れ条件
 
-1. 小さな検証用スタックで、LambdaからBedrockとMemoryにアクセスし、Strands連携の保存・復元・権限・タイムアウトを確認する。
+1. 検証用のTerraform構成で、LambdaからBedrockとMemoryにアクセスし、Strands連携の保存・復元・権限・タイムアウトを確認する。
 2. 受付、FIFO、処理状態を実装し、モデルを呼ばないワーカーで署名検証と重複・障害試験を通す。
 3. 単一エージェントの会話とURL・添付ツールを実装する。Memoryの途中保存とSlack投稿結果不明の復旧を含める。
 4. 別の検証用Slackアプリで負荷・障害試験を実施する。本番アプリのRequest URLはこの間変更しない。
@@ -486,7 +501,7 @@ Lambdaのバージョンとエイリアスでロールバック可能にする�
 | --- | --- | --- |
 | モデルとInference Profile | 日本語品質、ツール互換性、費用、処理先 | 推論実装前 |
 | Memory連携の採用バージョン | 復元と途中失敗の互換性試験 | 会話実装前 |
-| IaCのAgentCore対応 | 必要リソースと設定の再現性 | スタック実装前 |
+| IaCのAgentCore対応 | 必要リソースと設定の再現性 | IaC実装前 |
 | 月間利用量と月額上限 | 負荷想定と料金試算 | 本番切り替え前 |
 | 30日の会話保持方針 | 利用者の期待と削除要件 | 本番切り替え前 |
 | S3の追加 | 添付や生成物を後から再取得する必要性 | 永続ファイル機能の実装前 |

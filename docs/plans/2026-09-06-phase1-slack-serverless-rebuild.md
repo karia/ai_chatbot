@@ -85,8 +85,11 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 | `src/worker/requirements.txt` | ワーカーだけが使う依存の固定 |
 | `tests/unit/ingress/` | 受付の単体テスト |
 | `tests/unit/worker/` | ワーカーの単体テスト |
-| `template.yaml` | AWS SAMのスタック定義 |
-| `samconfig.toml` | 環境ごとのデプロイ設定 |
+| `terraform/` | インフラのリソースと環境別の変数定義 |
+| `src/ingress/function.jsonnet` | lambrollによる受付Lambdaの関数定義 |
+| `src/worker/function.jsonnet` | lambrollによるワーカーLambdaの関数定義 |
+| `Makefile` | `deploy-infra`と`deploy-app`によるインフラと関数コードのデプロイ |
+| `.mise.toml` | CIとローカルで使うツールバージョンの固定 |
 | `docs/runbooks/` | 切り替えと復旧の手順書 |
 
 キューのメッセージ契約は受付とワーカーの双方が保持し、送信時と受信時の両方で検証する。
@@ -121,10 +124,12 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 
 **目的**：以降のPull Requestが自動検証を受けられる状態にする。
 
-- 作成：`.github/workflows/ci.yml`
+- 作成：`.github/workflows/ci.yml`、`.mise.toml`
 - 変更：`requirements-dev.txt`、`pytest.ini`
 - 単体テスト、依存関係の脆弱性検査、秘密情報の検査を実行する
-- IaC検証のジョブは、`template.yaml`の追加後に有効化できる形で用意する
+- `.mise.toml`でterraform、tflint、lambroll、aws-cliのバージョンを固定し、CIとローカルで同じバージョンを使う
+- IaC検証のジョブは、`terraform/`の追加時に自動で有効になる形で用意する
+- IaC検証は`terraform/`で`terraform fmt -check -recursive`、`terraform init -backend=false`、`terraform validate`、`tflint`、`trivy config .`を実行する
 - `src/ingress/`と`src/worker/`の両方をテスト対象に含められるよう、import解決の設定を先に入れる
 
 **検証**：`./run_tests.sh`が通り、Pull Request上でCIが成功する。
@@ -135,15 +140,20 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 
 **目的**：ADR-001が前提とするMemory連携が成立することを確認し、依存バージョンを固定する。
 
-- 作成：`template.yaml`の初版、`docs/verification/agentcore-memory.md`
-- Memoryリソースと検証用Lambda1本だけのスタックを東京リージョンへ作成する
-- 短期記憶30日、長期記憶の抽出なしの設定で、保存、復元、権限、タイムアウトを確認する
+- 作成：`terraform/`の初版、`docs/verification/agentcore-memory.md`
+- `terraform/`の追加により、PR 2で用意したCIのIaC検証ジョブが自動で動き始めることを確認する
+- hashicorp/aws providerのバージョン制約を`>= 6.18.0, < 7.0.0`とする
+- lockファイルでは、この制約を満たすうち実際に使用する1バージョンを固定する
+- `aws_bedrockagentcore_memory`と検証用Lambda1本の構成を東京リージョンへ作成する
+- `event_expiry_duration`を30日に設定し、抽出戦略のリソースを作成せずに、保存、復元、権限、タイムアウトを確認する
 - セッションの途中終了時に何が保存され何が失われるかを記録する
 - 確認できたSDKと連携パッケージのバージョンを固定する
 
-**検証**：スタックの作成と更新が再現し、同一`session_id`で会話が復元できる。
+**検証**：Terraformのapplyと再applyが再現し、同一`session_id`で会話が復元できる。
+Memoryの削除、Memory IDによるimport、管理属性のdrift検知と修復を確認する。
 
-**詰まりやすい点**：AgentCore Memoryの提供リージョンとCloudFormationの対応状況は先に確認する。
+**詰まりやすい点**：未管理の抽出戦略はMemory本体のplanでは検知できないため、抽出戦略が追加されていないことを別途確認する。
+provider固有の問題が出た場合はawscc providerの専用リソースを検証する。
 連携パッケージはCommunity Contributionの位置付けであり、想定どおり動かない場合はStrandsのS3SessionManagerへ切り替える判断をこのPull Requestで下す。
 
 **保存方式を切り替える場合**：PR 4へ進む前に、ADR-001と本計画を改訂する。
@@ -152,16 +162,18 @@ S3を使う場合はPhase 1の対象に加え、暗号化、公開アクセス�
 
 ## PR 4: 本番構成のIaC
 
-**目的**：新経路のリソースを1つのスタックとして作り、開発環境と本番環境を分ける。
+**目的**：新経路のリソースをTerraformの構成として定義し、開発環境と本番環境を分ける。
 
-- 変更：`template.yaml`
-- 作成：`samconfig.toml`
+- 変更：`terraform/`
+- 作成：`terraform/`内の環境別の変数定義
 - API Gateway HTTP API、SQS FIFO、FIFOのDLQ、DynamoDBテーブル、Secrets Managerの参照を定義する
 - 受付とワーカーのIAMロールを分離し、それぞれに必要な権限だけを与える
-- ADR-001の「初期設定」のうち、環境差と運用上の調整が必要な値をパラメーターとして外に出し、残りはテンプレート内に持つ
-- 関数の中身は疎通確認だけを行うプレースホルダーとする
+- ADR-001の「初期設定」のうち、環境差と運用上の調整が必要な値をパラメーターとして外に出し、残りはTerraformの定義内に持つ
+- Lambda本体はTerraformで作成し、初回はダミーzipを配置する
+- lambrollで配布するコードと実行設定をTerraformの再applyで上書きしないよう、管理範囲を分ける
+- tfstateはnative S3 lockingを有効にしたS3バックエンドへ保存し、バケット名はgit管理外のbackend設定ファイルから注入する
 
-**検証**：`sam validate --lint`が通り、開発環境へのデプロイと削除が再現する。
+**検証**：`terraform/`で`terraform fmt -check -recursive`、`terraform init -backend=false`、`terraform validate`、`tflint`、`trivy config .`が通り、開発環境へのデプロイと削除が再現する。
 
 **詰まりやすい点**：可視性タイムアウトとワーカーのタイムアウトの関係、`maxReceiveCount`、予約済み同時実行数は、ADR-001の初期値をそのまま入れる。
 
@@ -170,7 +182,7 @@ S3を使う場合はPhase 1の対象に加え、暗号化、公開アクセス�
 **目的**：Slackの3秒制約を満たす受付処理を実装する。
 
 - 作成：`src/ingress/app.py`、`src/ingress/signature.py`、`src/ingress/events.py`、`tests/unit/ingress/`
-- 変更：`template.yaml`
+- 変更：`terraform/`
 - payload format version 2.0の本文復元、署名検証、`url_verification`応答を実装する
 - `team_id`と`api_app_id`を照合し、人間による`app_mention`だけを対象にする
 - 正規化したメッセージをSQSへ送り、送信成功を確認してから200を返す
@@ -219,7 +231,7 @@ PR 6に足りない操作があれば、このPull Requestでデータアクセ�
 **目的**：推論を伴わない状態でワーカーの冪等性と障害境界を完成させる。
 
 - 作成：`src/worker/app.py`、`src/worker/pipeline.py`、`tests/unit/worker/test_pipeline.py`
-- 変更：`template.yaml`
+- 変更：`terraform/`
 - `RUNNING`から`COMPLETED`までの遷移と、各永続化境界での再開または隔離を実装する
 - 応答生成の代わりに固定文言を返し、受付から返信までを通す
 - 停止中のセッションでは外部呼び出しを行わずに失敗を返す
@@ -272,7 +284,7 @@ Memoryの部分保存とタイムアウトで、会話が無条件に再追加�
 
 **目的**：ADR-001の初期目標を計測し、隔離イベントを検知できるようにする。
 
-- 変更：`template.yaml`、`src/ingress/`、`src/worker/`
+- 変更：`terraform/`、`src/ingress/`、`src/worker/`
 - 作成：`docs/runbooks/alerts.md`
 - 受付遅延、受付5xx、キュー最古メッセージ、DLQ件数、`NEEDS_REVIEW`件数、タイムアウトのアラームを定義する
 - BedrockとMemoryのスロットリングを計測する
@@ -290,12 +302,13 @@ Memoryの部分保存とタイムアウトで、会話が無条件に再追加�
 
 **目的**：本番デプロイを自動化し、ロールバック手段を用意する。
 
-- 作成：`.github/workflows/deploy.yml`
-- 変更：`samconfig.toml`、`.github/workflows/ci.yml`
+- 作成：`.github/workflows/deploy.yml`、`Makefile`、`src/ingress/function.jsonnet`、`src/worker/function.jsonnet`
+- 変更：`terraform/`、`.github/workflows/ci.yml`
 - GitHub ActionsのOIDCと限定したロールでデプロイする
-- 開発環境と本番環境でスタック、キュー、テーブル、Memory、秘密値を分ける
-- Lambdaのバージョンとエイリアスを発行し、直前バージョンへ戻せるようにする
-- CIにIaC検証のジョブを追加する
+- Makefileの`deploy-infra`で`terraform apply`、`deploy-app`で`lambroll deploy`を実行し、インフラと関数コードのデプロイを分ける
+- lambrollの関数定義はjsonnetで記述し、環境変数はTerraformのoutputから渡す
+- 開発環境と本番環境でTerraformの構成とtfstate、キュー、テーブル、Memory、秘密値を分ける
+- lambrollでLambdaのバージョンとエイリアスを管理し、直前バージョンへ戻せるようにする
 
 **検証**：開発環境への自動デプロイと、エイリアスの切り戻しを実行して確認する。
 
