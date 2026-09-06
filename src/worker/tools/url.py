@@ -6,6 +6,7 @@ import logging
 import os
 import socket
 import time
+from email.message import Message
 from urllib.parse import urlsplit
 
 import pycurl
@@ -157,15 +158,12 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
                     continue
                 if not 200 <= status < 300:
                     raise FetchError("http_error")
-                content_type = (
-                    (curl.getinfo(pycurl.CONTENT_TYPE) or "")
-                    .split(";", 1)[0]
-                    .strip()
-                    .lower()
-                )
+                header = Message()
+                header["Content-Type"] = curl.getinfo(pycurl.CONTENT_TYPE) or ""
+                content_type = header["Content-Type"].split(";", 1)[0].strip().lower()
                 if content_type not in allowed_types:
                     raise FetchError("unsupported_type")
-                return bytes(body), content_type, target
+                return bytes(body), content_type, target, header.get_content_charset()
             except pycurl.error as exc:
                 raise FetchError(
                     callback_reason
@@ -198,13 +196,20 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
         )
 
 
+def _decode_text(body, charset):
+    try:
+        return body.decode(charset or "utf-8", errors="replace")
+    except LookupError:
+        return body.decode("utf-8", errors="replace")
+
+
 def fetch_url(target):
     """Return {url, title, text, trusted: False}; raise FetchError on refusal.
 
     One call permits three redirects, 1 MiB total body bytes and ten seconds
     including DNS, TLS and redirects. Consumers must keep text in tool results.
     """
-    body, content_type, final_url = _fetch(target)
+    body, content_type, final_url, charset = _fetch(target)
     title = ""
     if content_type in HTML_TYPES:
         soup = BeautifulSoup(body, "html.parser")
@@ -213,5 +218,5 @@ def fetch_url(target):
             node.decompose()
         text = (soup.body or soup).get_text(" ", strip=True)
     else:
-        text = body.decode("utf-8", errors="replace")
+        text = _decode_text(body, charset)
     return {"url": final_url, "title": title, "text": text, "trusted": False}

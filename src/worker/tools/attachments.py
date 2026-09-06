@@ -2,7 +2,7 @@
 
 import time
 
-from worker.tools.url import TEXT_TYPES, FetchError, _fetch, _log
+from worker.tools.url import TEXT_TYPES, FetchError, _decode_text, _fetch, _log
 
 MAX_ATTACHMENTS = 3
 
@@ -48,7 +48,7 @@ def fetch_attachments(event, *, slack_token):
 
     results = []
     for file in files:
-        body, _, target = _fetch(
+        body, _, target, charset = _fetch(
             file["url_private"], slack_token=slack_token, allowed_types=TEXT_TYPES
         )
         results.append(
@@ -56,7 +56,7 @@ def fetch_attachments(event, *, slack_token):
                 "id": file.get("id", ""),
                 "name": file.get("name", ""),
                 "url": target,
-                "text": body.decode("utf-8", errors="replace"),
+                "text": _decode_text(body, charset),
                 "trusted": False,
             }
         )

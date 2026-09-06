@@ -477,3 +477,28 @@ def test_transport_failures_are_logged_at_error_level(transport, capsys, monkeyp
     with pytest.raises(url.FetchError):
         url.fetch_url("https://example.com")
     assert json.loads(capsys.readouterr().out)["level"] == "ERROR"
+
+
+@pytest.mark.parametrize("reader", ["url", "attachment"])
+@pytest.mark.parametrize(
+    "content_type,encoding,text",
+    [
+        ("text/csv; charset=Shift_JIS", "shift_jis", "商品,価格\n日本茶,百円"),
+        ('text/csv; Charset="CP932"; other="a;b"', "cp932", "商品,価格\n髙級茶,①円"),
+        ("text/plain", "utf-8", "日本語の本文"),
+        ("text/plain; charset=unknown-encoding", "utf-8", "日本語の本文"),
+        ('text/plain; charset=""', "utf-8", "日本語の本文"),
+        ("text/plain; charset=base64_codec", "utf-8", "日本語の本文"),
+    ],
+)
+def test_response_charset_decodes_text(transport, reader, content_type, encoding, text):
+    transport.responses = [{"type": content_type, "chunks": [text.encode(encoding)]}]
+    if reader == "url":
+        result = url.fetch_url("https://example.com")
+    else:
+        result = attachments.fetch_attachments(
+            {"files": [attachment()]}, slack_token="dummy-token"
+        )[0]
+    assert result["text"] == text
+    assert "\ufffd" not in result["text"]
+    assert result["trusted"] is False
