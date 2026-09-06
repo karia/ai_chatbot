@@ -368,6 +368,7 @@ BrowserやCode Interpreter、外部サービスへの書き込みは独立した
 受付にはSigning Secretの取得と対象キューへの送信を許可する。
 ワーカーには対象キューの受信・削除、処理テーブル、Memoryデータプレーン、採用するBedrockモデル、Bot Tokenへのアクセスを許可する。
 Memory作成やIAM変更の権限はデプロイ用ロールに集約する。
+会話内容を含むCloudWatch Logsの閲覧権限は、調査に必要な運用者のIAMロールと対象ロググループに限定する。
 秘密値はSecrets Managerから取得し、環境変数には参照先を設定する。
 
 Slackの初期スコープは`app_mentions:read`、`chat:write`、添付取得用の`files:read`を基本とする。
