@@ -203,7 +203,7 @@ S3SessionManagerへの切り替えが必要になった場合は、`strands-agen
 
 ### 作成と更新の再現
 
-`terraform apply`と再applyのどちらも同じoutputを返し、構成の再現を確認した。
+`terraform apply`の再実行は差分なしで完了し、同じoutputを返した。
 lambrollで関数コードを配布した後の`terraform plan`は差分なしとなり、コード配布はTerraformのdriftとして現れない。
 
 ### 保存と復元
@@ -235,7 +235,7 @@ Lambdaの実行時間切れ（`Sandbox.Timedout`）を起こし、保存済み�
 
 ## 実機検証の構成と再現手順
 
-検証用LambdaはPython 3.12、arm64、512 MiB、タイムアウト20秒で実行する。
+検証用LambdaはPython 3.14、arm64、512 MiB、タイムアウト20秒で実行する。
 Strandsのモデルは固定テキストを返す検証用実装であり、会話の保存先は東京のAgentCore Memoryである。
 Bedrockのモデル推論とtool useの互換性は、この検証の対象に含まれない。
 
@@ -260,14 +260,17 @@ bucket = "<state-bucket-name>"
 実行にはboto3とbotocoreが要るため、`.verification/venv`を作ってそこから呼ぶ。
 
 ```sh
-mise exec terraform@1.16.0 aqua:fujiwara/lambroll@1.5.2 -- make deploy-infra
-mise exec terraform@1.16.0 aqua:fujiwara/lambroll@1.5.2 -- make deploy-app
-uv venv .verification/venv --python 3.12
+mise install
+make deploy-infra
+make deploy-app
+uv venv .verification/venv --python 3.14
 uv pip install --python .verification/venv/bin/python -r app/requirements.txt "botocore[crt]==1.43.89"
 .verification/venv/bin/python scripts/verify_memory.py
-mise exec terraform@1.16.0 -- terraform -chdir=terraform plan
-mise exec terraform@1.16.0 -- make destroy
+terraform -chdir=terraform plan
+make destroy
 ```
+
+ツールのバージョンは`.mise.toml`に固定してあり、`mise install`で揃う。
 
 Lambdaの実行ロールは対象Memoryの`CreateEvent`、`GetEvent`、`ListEvents`と対象ロググループへの書き込みを許可する。
 モデル呼び出し、長期記憶の検索、Memoryの管理操作、イベント削除の権限は付与しない。

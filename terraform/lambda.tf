@@ -44,7 +44,7 @@ resource "aws_lambda_function" "verification" {
   function_name = "ai-chatbot-memory-verification"
   role          = aws_iam_role.verification.arn
   filename      = data.archive_file.dummy.output_path
-  runtime       = "python3.12"
+  runtime       = "python3.14"
   handler       = "handler.lambda_handler"
   architectures = ["arm64"]
   depends_on    = [aws_iam_role_policy.verification]

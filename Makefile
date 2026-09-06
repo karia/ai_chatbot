@@ -2,7 +2,7 @@
 
 build:
 	rm -rf .build
-	UV_CACHE_DIR=$(CURDIR)/.cache/uv uv pip install --python-version 3.12 --python-platform aarch64-manylinux2014 --only-binary :all: --target .build -r app/requirements.txt
+	UV_CACHE_DIR=$(CURDIR)/.cache/uv uv pip install --python-version 3.14 --python-platform aarch64-manylinux2014 --only-binary :all: --target .build -r app/requirements.txt
 	cp app/handler.py .build/handler.py
 
 deploy-infra:
