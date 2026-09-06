@@ -8,7 +8,7 @@ VENV_PATH="exec_test"
 if [ ! -d "$VENV_PATH" ]; then
     echo "仮想環境が見つかりません。新しく作成します: $VENV_PATH"
     python3 -m venv "$VENV_PATH"
-    
+
     # 仮想環境を有効化して依存パッケージをインストール
     source "$VENV_PATH/bin/activate"
     pip install --upgrade pip
