@@ -38,7 +38,7 @@ PostgreSQLのジョブテーブルも配送制御の実装とDBバックアッ�
 - 決定日：2026-09-06
 - 採用案：[ADR-001](001-serverless-strands-chatbot.md#採用判断の記録)
 
-同じ利用量での月額差はSlackのみでUSD 2.68、Discord込みでUSD 3.92であり、ホスト保守、IAM Roles Anywhereの証明書運用、長期保存ファイルを扱う場合のMinIOのバックアップを増やす理由としては小さい。
+[コスト試算の仮定に基づく月額差](#両案の比較結果)は同じ利用量でSlackのみUSD 2.68、Discord込みUSD 3.92であり、ホスト保守、IAM Roles Anywhereの証明書運用、長期保存ファイルを扱う場合のMinIOのバックアップを増やす理由としては小さい。
 本案は数時間の停止と受信欠落の許容を前提とするため、Slackの受付と投入済みジョブの処理をホスト保守から切り離せるADR-001をAcceptedとし、本案をRejectedとする。
 
 ## AWS中心案との比較
