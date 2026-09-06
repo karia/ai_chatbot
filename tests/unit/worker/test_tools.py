@@ -39,7 +39,7 @@ def transport(monkeypatch):
                     addr=(ip, 443, 0, 0) if family == socket.AF_INET6 else (ip, 443),
                 )
                 result = self.options[pycurl.OPENSOCKETFUNCTION](
-                    pycurl.SOCKTYPE_IPCXN, address
+                    pycurl.SOCKTYPE_IPCXN, self.response.get("socket_address", address)
                 )
                 if result == pycurl.SOCKET_BAD:
                     raise pycurl.error(pycurl.E_COULDNT_CONNECT, "blocked")
@@ -502,3 +502,24 @@ def test_response_charset_decodes_text(transport, reader, content_type, encoding
     assert result["text"] == text
     assert "\ufffd" not in result["text"]
     assert result["trusted"] is False
+
+
+@pytest.mark.parametrize("peer", [(), None, ("invalid-address",)])
+def test_malformed_socket_address_fails_closed(transport, peer, capsys):
+    import json
+
+    transport.responses = [
+        {
+            "socket_address": SimpleNamespace(
+                family=socket.AF_INET,
+                socktype=socket.SOCK_STREAM,
+                protocol=socket.IPPROTO_TCP,
+                addr=peer,
+            )
+        }
+    ]
+    with pytest.raises(url.FetchError, match="^connection_failed$"):
+        url.fetch_url("https://example.com")
+    assert not transport.sockets
+    assert transport.calls[0].closed
+    assert json.loads(capsys.readouterr().out)["reason"] == "connection_failed"

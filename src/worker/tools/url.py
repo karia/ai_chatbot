@@ -108,7 +108,7 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
                     return socket.socket(
                         address.family, address.socktype, address.protocol
                     )
-                except (ValueError, OSError):
+                except Exception:
                     callback_reason = "connection_failed"
                     return pycurl.SOCKET_BAD
 
