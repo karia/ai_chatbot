@@ -12,7 +12,7 @@ from botocore.config import Config
 def main():
     client = boto3.client(
         "lambda",
-        region_name="ap-northeast-1",
+        region_name=os.environ.get("AWS_REGION", "ap-northeast-1"),
         config=Config(read_timeout=40, retries={"total_max_attempts": 1}),
     )
     function = os.environ.get("LAMBDA_FUNCTION_NAME", "ai-chatbot-memory-verification")

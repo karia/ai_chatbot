@@ -21,6 +21,8 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
+data "aws_region" "current" {}
+
 resource "aws_bedrockagentcore_memory" "verification" {
   name                  = "AiChatbotMemoryVerification"
   description           = "Temporary session persistence verification"

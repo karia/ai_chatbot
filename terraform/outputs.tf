@@ -8,5 +8,5 @@ output "memory_id" {
   value = aws_bedrockagentcore_memory.verification.id
 }
 output "aws_region" {
-  value = "ap-northeast-1"
+  value = data.aws_region.current.region
 }
