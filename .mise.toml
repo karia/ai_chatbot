@@ -1,0 +1,9 @@
+[tools]
+python = "3.13"
+terraform = "1.16.1"
+tflint = "0.64.0"
+"aqua:fujiwara/lambroll" = "1.5.2"
+"aqua:aws/aws-cli" = "2.36.40"
+
+[env]
+AWS_REGION = "ap-northeast-1"
