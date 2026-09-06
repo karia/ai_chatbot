@@ -2,3 +2,5 @@ strands-agents==1.54.0
 bedrock-agentcore[strands-agents]==1.22.0
 boto3==1.43.89
 botocore==1.43.89
+pycurl==7.47.0
+beautifulsoup4==4.15.0
