@@ -60,3 +60,8 @@ variable "bedrock_resource_arns" {
     error_message = "Supply exact Bedrock model or inference profile ARNs without wildcards."
   }
 }
+
+variable "point_in_time_recovery_enabled" {
+  type    = bool
+  default = true
+}

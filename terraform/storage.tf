@@ -43,6 +43,6 @@ resource "aws_dynamodb_table" "state" {
     enabled = true
   }
   point_in_time_recovery {
-    enabled = true
+    enabled = var.point_in_time_recovery_enabled
   }
 }

@@ -2,8 +2,9 @@ mock_provider "aws" {}
 mock_provider "archive" {}
 
 variables {
-  environment = "dev"
-  log_level   = "DEBUG"
+  environment                    = "dev"
+  log_level                      = "DEBUG"
+  point_in_time_recovery_enabled = false
 }
 
 run "initial_settings" {
@@ -12,6 +13,8 @@ run "initial_settings" {
   assert {
     condition = (
       aws_lambda_function.app["ingress"].timeout == 3 &&
+      aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000 &&
+      !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
       aws_lambda_function.app["worker"].timeout == 120 &&
       aws_sqs_queue.events.visibility_timeout_seconds == 720 &&
       aws_lambda_function.app["worker"].reserved_concurrent_executions == 5 &&
@@ -40,12 +43,14 @@ run "initial_settings" {
 run "production_isolation" {
   command = plan
   variables {
-    environment = "prod"
-    log_level   = "INFO"
+    environment                    = "prod"
+    log_level                      = "INFO"
+    point_in_time_recovery_enabled = true
   }
   assert {
     condition = (
       aws_lambda_function.app["worker"].function_name == "ai-chatbot-prod-worker" &&
+      aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
       aws_sqs_queue.events.name == "ai-chatbot-prod-events.fifo" &&
       aws_dynamodb_table.state.name == "ai-chatbot-prod-state" &&
       aws_bedrockagentcore_memory.conversation.name == "ai_chatbot_prod_conversation" &&

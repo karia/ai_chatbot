@@ -33,7 +33,7 @@ resource "aws_apigatewayv2_integration" "ingress" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.app["ingress"].invoke_arn
   payload_format_version = "2.0"
-  timeout_milliseconds   = 3000
+  timeout_milliseconds   = 5000
 }
 
 resource "aws_apigatewayv2_route" "events" {
