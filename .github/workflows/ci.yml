@@ -74,6 +74,7 @@ jobs:
       - run: terraform -chdir=terraform fmt -check -recursive
       - run: terraform -chdir=terraform init -backend=false
       - run: terraform -chdir=terraform validate
+      - run: terraform -chdir=terraform test
       - run: tflint --init --config=.tflint.hcl
         working-directory: terraform
       - run: tflint --config=.tflint.hcl

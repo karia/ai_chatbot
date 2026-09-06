@@ -11,7 +11,6 @@ terraform {
     }
   }
   backend "s3" {
-    key          = "ai-chatbot-memory-verification/terraform.tfstate"
     region       = "ap-northeast-1"
     encrypt      = true
     use_lockfile = true
@@ -21,10 +20,19 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
-data "aws_region" "current" {}
+locals {
+  prefix = "${var.project_name}-${var.environment}"
+}
 
-resource "aws_bedrockagentcore_memory" "verification" {
-  name                  = "AiChatbotMemoryVerification"
-  description           = "Temporary session persistence verification"
+resource "aws_bedrockagentcore_memory" "conversation" {
+  name                  = "${replace(local.prefix, "-", "_")}_conversation"
   event_expiry_duration = 30
+}
+
+data "aws_secretsmanager_secret" "signing" {
+  name = "${local.prefix}/slack-signing-secret"
+}
+
+data "aws_secretsmanager_secret" "bot" {
+  name = "${local.prefix}/slack-bot-token"
 }
