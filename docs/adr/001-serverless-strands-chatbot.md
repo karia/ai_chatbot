@@ -321,7 +321,7 @@ Lambda強制終了時のflushは保証されない。[StrandsのAgentCore Memory
 環境ごとにMemoryリソースを分離する。
 
 初期版は短期記憶を30日保持し、長期記憶の抽出は無効にする。
-CloudFormationの`AWS::BedrockAgentCore::Memory`で`EventExpiryDuration=30`を指定し、`MemoryStrategies`を設定しない。[MemoryのCloudFormation定義](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-bedrockagentcore-memory.html)
+Terraformの`aws_bedrockagentcore_memory`で`event_expiry_duration`を30に設定し、長期記憶の抽出戦略のリソースは作成しない。[MemoryのTerraformリソース定義](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/bedrockagentcore_memory)
 スレッドをまたぐユーザー嗜好の共有には、共有範囲と削除要件の追加設計が必要である。
 後から長期記憶を有効にする場合は、まずスレッド単位の要約に限定し、namespaceをactorとsessionで分離する。
 長期記憶の検索結果を認可判断や処理完了の根拠にはしない。
