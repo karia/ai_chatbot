@@ -166,3 +166,14 @@ function*.json
 
 # virtual env
 exec_test/*
+
+# Verification build artifacts and private Terraform state
+.verification/
+.build/
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/*.tfplan
+terraform/backend.tfbackend
+terraform/*_override.tf
+terraform/dummy.zip
+app/function.zip
