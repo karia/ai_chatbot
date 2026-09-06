@@ -1,9 +1,13 @@
 [tools]
-python = "3.13"
+python = "3.14.7"
 terraform = "1.16.1"
 tflint = "0.64.0"
+trivy = "0.74.0"
+uv = "0.12.10"
+prek = "0.5.2"
 "aqua:fujiwara/lambroll" = "1.5.2"
 "aqua:aws/aws-cli" = "2.36.40"
+"aqua:suzuki-shunsuke/pinact" = "4.1.1"
 
 [env]
 AWS_REGION = "ap-northeast-1"
