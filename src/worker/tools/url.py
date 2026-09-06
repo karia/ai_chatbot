@@ -36,7 +36,7 @@ def _validate_url(target):
             or parts.password is not None
             or "\\" in target
             or "%" in parts.hostname
-            or not 0 < (parts.port or 443) <= 65535
+            or parts.port == 0
         ):
             raise ValueError
         return parts
@@ -51,7 +51,8 @@ def _public_address(address):
     if isinstance(ip, ipaddress.IPv6Address):
         # Reject translation/tunneling ranges, including globally scoped NAT64.
         return (
-            ip.ipv4_mapped is None
+            not ip.is_site_local
+            and ip.ipv4_mapped is None
             and ip.sixtofour is None
             and ip.teredo is None
             and ip not in ipaddress.ip_network("64:ff9b::/96")
@@ -110,7 +111,7 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
                     callback_reason = "connection_failed"
                     return pycurl.SOCKET_BAD
 
-            def write(chunk):
+            def write(chunk, body=body):
                 nonlocal size, callback_reason
                 size += len(chunk)
                 if size > MAX_BYTES:
@@ -180,8 +181,16 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
         reason = str(exc)
         raise
     finally:
+        level = "WARNING" if reason else "INFO"
+        if reason in {
+            "transport_error",
+            "http_error",
+            "connection_failed",
+            "async_dns_required",
+        }:
+            level = "ERROR"
         _log(
-            "WARNING" if reason else "INFO",
+            level,
             destination=destination,
             bytes_read=size,
             duration_ms=round((time.monotonic() - started) * 1000, 2),
