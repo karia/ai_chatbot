@@ -256,7 +256,8 @@ bucket = "<state-bucket-name>"
 ```
 
 次のコマンドは検証専用のAWS環境で実行する。
-`make verify`はLambdaを呼び出してイベントを保存し、タイムアウトも発生させる。
+`scripts/verify_memory.py`はデプロイ済みのLambdaを呼び出してイベントを保存し、タイムアウトも発生させる。
+実行にはboto3とbotocoreが要るため、`.verification/venv`を作ってそこから呼ぶ。
 
 ```sh
 mise exec terraform@1.16.0 aqua:fujiwara/lambroll@1.5.2 -- make deploy-infra

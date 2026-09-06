@@ -1,6 +1,7 @@
-.PHONY: build deploy-infra deploy-app verify destroy
+.PHONY: build deploy-infra deploy-app destroy
 
 build:
+	rm -rf .build
 	UV_CACHE_DIR=$(CURDIR)/.cache/uv uv pip install --python-version 3.12 --python-platform aarch64-manylinux2014 --only-binary :all: --target .build -r app/requirements.txt
 	cp app/handler.py .build/handler.py
 
@@ -15,9 +16,6 @@ deploy-app: build
 	  MEMORY_ID="$$(terraform -chdir=../terraform output -raw memory_id)" \
 	  AWS_REGION="$$(terraform -chdir=../terraform output -raw aws_region)" \
 	  lambroll deploy --function function.jsonnet --src ../.build --no-publish
-
-verify:
-	python scripts/verify_memory.py
 
 destroy:
 	terraform -chdir=terraform destroy
