@@ -448,7 +448,8 @@ lambrollの関数定義はjsonnetで記述し、環境変数はTerraformのoutpu
 Makefileでは、`terraform apply`を実行する`deploy-infra`と、`lambroll deploy`を実行する`deploy-app`を分ける。
 tfstateはnative S3 lockingを有効にしたS3バックエンドに保存し、バケット名はリポジトリに置かず、git管理外のbackend設定ファイルから注入する。
 MemoryはTerraformのhashicorp/aws providerの`aws_bedrockagentcore_memory`で管理する。
-providerのバージョン制約は`~> 6.0`とし、6.18.0以降をlockファイルで固定する。
+providerのバージョン制約は`>= 6.18.0, < 7.0.0`とする。
+lockファイルでは、この制約を満たすうち実際に使用する1バージョンを固定する。
 短期記憶の保持日数はMemory本体で管理し、長期記憶の抽出戦略は別リソースで表す。
 初期構成では抽出戦略のリソースを作成せず、長期記憶の抽出を行わない。
 管理属性のdriftを検知できるが、外部から追加された未管理の抽出戦略はMemory本体のplanでは検知できない。

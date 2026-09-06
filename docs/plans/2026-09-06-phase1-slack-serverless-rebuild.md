@@ -141,7 +141,8 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 **目的**：ADR-001が前提とするMemory連携が成立することを確認し、依存バージョンを固定する。
 
 - 作成：`terraform/`の初版、`docs/verification/agentcore-memory.md`
-- hashicorp/aws providerのバージョン制約を`~> 6.0`とし、6.18.0以降をlockファイルで固定する
+- hashicorp/aws providerのバージョン制約を`>= 6.18.0, < 7.0.0`とする
+- lockファイルでは、この制約を満たすうち実際に使用する1バージョンを固定する
 - `aws_bedrockagentcore_memory`と検証用Lambda1本の構成を東京リージョンへ作成する
 - `event_expiry_duration`を30日に設定し、抽出戦略のリソースを作成せずに、保存、復元、権限、タイムアウトを確認する
 - セッションの途中終了時に何が保存され何が失われるかを記録する
