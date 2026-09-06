@@ -1,0 +1,8 @@
+# AVD-AWS-0017: CloudWatch log group is not encrypted with a customer-managed KMS key.
+# The AWS managed key is sufficient for this project.
+
+AVD-AWS-0017
+
+# AVD-AWS-0066: Lambda X-Ray tracing is not enabled in Terraform.
+# Tracing is configured with the rest of the monitoring work, not in this stack.
+AVD-AWS-0066
