@@ -11,16 +11,19 @@ build:
 	cp src/worker/*.py .build/worker/
 
 init-infra:
-	test -f terraform/$(ENV).tfvars
-	test -f terraform/$(ENV).tfbackend
+	test -f terraform/$(ENV).tfvars || { echo "Missing file: terraform/$(ENV).tfvars" >&2; exit 1; }
+	test -f terraform/$(ENV).tfbackend || { echo "Missing file: terraform/$(ENV).tfbackend" >&2; exit 1; }
 	terraform -chdir=terraform init -reconfigure -backend-config=$(ENV).tfbackend
 
 deploy-infra: init-infra
 	terraform -chdir=terraform apply -var-file=$(ENV).tfvars
 
 deploy-app: init-infra build
-	APP_CONFIG="$$(terraform -chdir=terraform output -json app_config)" lambroll deploy --function src/ingress/function.jsonnet --src .build/ingress --no-publish
-	APP_CONFIG="$$(terraform -chdir=terraform output -json app_config)" lambroll deploy --function src/worker/function.jsonnet --src .build/worker --no-publish
+	@set -e; \
+	APP_CONFIG="$$(terraform -chdir=terraform output -json app_config)"; \
+	export APP_CONFIG; \
+	lambroll deploy --function src/ingress/function.jsonnet --src .build/ingress --no-publish; \
+	lambroll deploy --function src/worker/function.jsonnet --src .build/worker --no-publish
 
 destroy: init-infra
 	terraform -chdir=terraform destroy -var-file=$(ENV).tfvars
