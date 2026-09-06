@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.1
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+        args: ['--hook-config=--retry-once-with-cleanup=true']
+      - id: terraform_tflint
+        args: ['--args=--config=__GIT_WORKING_DIR__/terraform/.tflint.hcl']
+      - id: terraform_trivy
+        args: ['--args=--ignorefile=__GIT_WORKING_DIR__/terraform/.trivyignore']
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: pinact
+        name: pinact
+        language: system
+        entry: pinact run
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: true
