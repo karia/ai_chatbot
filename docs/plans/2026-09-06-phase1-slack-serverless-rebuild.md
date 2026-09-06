@@ -128,7 +128,7 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 - 変更：`requirements-dev.txt`、`pytest.ini`
 - 単体テスト、依存関係の脆弱性検査、秘密情報の検査を実行する
 - `.mise.toml`でterraform、tflint、lambroll、aws-cliのバージョンを固定し、CIとローカルで同じバージョンを使う
-- IaC検証のジョブは、`terraform/`の追加後に有効化できる形で用意する
+- IaC検証のジョブは、`terraform/`の追加時に自動で有効になる形で用意する
 - IaC検証は`terraform/`で`terraform fmt -check -recursive`、`terraform init -backend=false`、`terraform validate`、`tflint`、`trivy config .`を実行する
 - `src/ingress/`と`src/worker/`の両方をテスト対象に含められるよう、import解決の設定を先に入れる
 
@@ -141,6 +141,7 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 **目的**：ADR-001が前提とするMemory連携が成立することを確認し、依存バージョンを固定する。
 
 - 作成：`terraform/`の初版、`docs/verification/agentcore-memory.md`
+- `terraform/`の追加により、PR 2で用意したCIのIaC検証ジョブが自動で動き始めることを確認する
 - hashicorp/aws providerのバージョン制約を`>= 6.18.0, < 7.0.0`とする
 - lockファイルでは、この制約を満たすうち実際に使用する1バージョンを固定する
 - `aws_bedrockagentcore_memory`と検証用Lambda1本の構成を東京リージョンへ作成する
@@ -308,7 +309,6 @@ Memoryの部分保存とタイムアウトで、会話が無条件に再追加�
 - lambrollの関数定義はjsonnetで記述し、環境変数はTerraformのoutputから渡す
 - 開発環境と本番環境でTerraformの構成とtfstate、キュー、テーブル、Memory、秘密値を分ける
 - lambrollでLambdaのバージョンとエイリアスを管理し、直前バージョンへ戻せるようにする
-- PR 2で用意したCIのIaC検証ジョブを有効化する
 
 **検証**：開発環境への自動デプロイと、エイリアスの切り戻しを実行して確認する。
 
