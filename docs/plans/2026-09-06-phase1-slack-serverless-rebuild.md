@@ -141,14 +141,17 @@ ADR-001は本文をログに残さない方針を採るため、この差分はP
 **目的**：ADR-001が前提とするMemory連携が成立することを確認し、依存バージョンを固定する。
 
 - 作成：`terraform/`の初版、`docs/verification/agentcore-memory.md`
-- Memoryの管理経路を確認し、Memoryリソースと検証用Lambda1本の構成を東京リージョンへ作成する
-- 短期記憶30日、長期記憶の抽出なしの設定で、保存、復元、権限、タイムアウトを確認する
+- hashicorp/aws providerのバージョン制約を`~> 6.0`とし、6.18.0以降をlockファイルで固定する
+- `aws_bedrockagentcore_memory`と検証用Lambda1本の構成を東京リージョンへ作成する
+- `event_expiry_duration`を30日に設定し、抽出戦略のリソースを作成せずに、保存、復元、権限、タイムアウトを確認する
 - セッションの途中終了時に何が保存され何が失われるかを記録する
 - 確認できたSDKと連携パッケージのバージョンを固定する
 
 **検証**：Terraformのapplyと再applyが再現し、同一`session_id`で会話が復元できる。
+Memoryの削除、Memory IDによるimport、管理属性のdrift検知と修復を確認する。
 
-**詰まりやすい点**：AgentCore Memoryの提供リージョンとTerraformでの管理経路は先に確認する。
+**詰まりやすい点**：未管理の抽出戦略はMemory本体のplanでは検知できないため、抽出戦略が追加されていないことを別途確認する。
+provider固有の問題が出た場合はawscc providerの専用リソースを検証する。
 連携パッケージはCommunity Contributionの位置付けであり、想定どおり動かない場合はStrandsのS3SessionManagerへ切り替える判断をこのPull Requestで下す。
 
 **保存方式を切り替える場合**：PR 4へ進む前に、ADR-001と本計画を改訂する。
