@@ -25,6 +25,10 @@ pip install -r src/worker/requirements.txt
 # 必要な環境変数を設定（テスト用のダミー値）
 export SLACK_BOT_TOKEN="xoxb-test-token"
 export DYNAMODB_TABLE_NAME="test-table"
+export AWS_ACCESS_KEY_ID="testing"
+export AWS_SECRET_ACCESS_KEY="testing"
+export AWS_DEFAULT_REGION="us-east-1"
+export AWS_EC2_METADATA_DISABLED="true"
 
 # pytestを実行
 python3 -m pytest "$@"
