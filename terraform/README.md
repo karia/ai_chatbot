@@ -17,7 +17,9 @@ workspaceは`default`を使う。
 Secrets Managerに`<project_name>-<environment>/slack-signing-secret`と`<project_name>-<environment>/slack-bot-token`を作り、それぞれの値をプレーンテキストのSecretStringとして保存する。
 Terraformは参照先だけを取得するため、秘密値はtfstateに取り込まない。
 
-環境ごとのSlackワークスペースIDとアプリIDを`TF_VAR_slack_team_id`と`TF_VAR_slack_api_app_id`で渡す。
+環境ごとのSlackワークスペースIDとアプリIDを`TF_VAR_slack_team_id`と`TF_VAR_slack_api_app_id`に設定し、`export`してから`make deploy-infra`を実行する。
+両変数はデフォルト値のない必須変数であり、未設定のまま非対話環境で実行すると`terraform apply`がエラー終了する。
+IDを公開リポジトリに置かないため、`dev.tfvars`と`prod.tfvars`には値を含めない。
 受付はこの組み合わせに一致するイベントだけをキューへ送る。
 
 ```sh
