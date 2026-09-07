@@ -316,3 +316,29 @@ def test_defer_accepts_float_retry_time(state):
         acquire(store, owner="two")
     now[0] = 1300.5
     assert acquire(store, owner="two")["attempt"] == 2
+
+
+def test_transaction_conflict_is_retryable_and_logged_as_warning(state, monkeypatch, capsys):
+    import json
+    from botocore.exceptions import ClientError
+
+    store, table, now = state
+    error = ClientError(
+        {
+            "Error": {"Code": "TransactionCanceledException"},
+            "CancellationReasons": [{"Code": "None"}, {"Code": "TransactionConflict"}],
+        },
+        "TransactWriteItems",
+    )
+
+    def fail(**kwargs):
+        raise error
+
+    monkeypatch.setattr(store.client, "transact_write_items", fail)
+    with pytest.raises(Conflict) as caught:
+        acquire(store)
+    assert caught.value.__cause__ is error
+    assert json.loads(capsys.readouterr().out) == {
+        "level": "WARNING", "operation": "state_conflict"
+    }
+    assert store.get_event("T", "E") is None

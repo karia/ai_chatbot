@@ -90,7 +90,8 @@ class Store:
             if error.response["Error"]["Code"] == "TransactionCanceledException":
                 reasons = error.response.get("CancellationReasons", [])
                 if any(
-                    reason.get("Code") == "ConditionalCheckFailed" for reason in reasons
+                    reason.get("Code") in {"ConditionalCheckFailed", "TransactionConflict"}
+                    for reason in reasons
                 ):
                     _log(logging.WARNING, "state_conflict")
                     raise Conflict("Conditional state write failed") from error
