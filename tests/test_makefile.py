@@ -59,7 +59,9 @@ def test_invalid_rollback_stops_before_aws(tmp_path):
     fake_bin = tmp_path / "terraform"
     fake_bin.write_text("#!/bin/sh\nexit 99\n")
     fake_bin.chmod(0o755)
-    for args in (["FUNCTION=invalid", "VERSION=7"], ["FUNCTION=worker", "VERSION=latest"]):
+    for args in (["FUNCTION=invalid", "VERSION=7"], *[
+        ["FUNCTION=worker", f"VERSION={version}"] for version in ["", "latest", "0", "00", "007"]
+    ]):
         result = subprocess.run(
             ["make", "rollback-app", *args], cwd=ROOT, text=True, capture_output=True,
             env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},

@@ -31,7 +31,7 @@ destroy: init-infra
 
 rollback-app:
 	@case "$(FUNCTION)" in ingress|worker) ;; *) echo "FUNCTION must be ingress or worker"; exit 1;; esac
-	@case "$(VERSION)" in ''|*[!0-9]*|0) echo "VERSION must be a positive published version"; exit 1;; esac
+	@case "$(VERSION)" in ''|*[!0-9]*|0*) echo "VERSION must be a positive published version"; exit 1;; esac
 	$(MAKE) init-infra ENV=$(ENV)
 	@set -e; \
 	APP_CONFIG="$$(terraform -chdir=terraform output -json app_config)"; \
