@@ -153,6 +153,7 @@ def test_invalid_base64(aws):
 
 
 def test_thread_ordering_and_retries(aws, payload):
+    """Ignore retry headers; derive stable FIFO deduplication IDs from team/event IDs."""
     payload["event"]["thread_ts"] = "1799999999.000001"
     event = request(payload)
     app.lambda_handler(event, None)
