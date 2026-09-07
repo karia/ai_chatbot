@@ -65,3 +65,21 @@ variable "point_in_time_recovery_enabled" {
   type    = bool
   default = true
 }
+
+variable "slack_team_id" {
+  description = "Slack workspace allowed to submit events. Supply per environment."
+  type        = string
+  validation {
+    condition     = can(regex("^T[A-Z0-9]+$", var.slack_team_id))
+    error_message = "Supply a Slack workspace ID."
+  }
+}
+
+variable "slack_api_app_id" {
+  description = "Slack app allowed to submit events. Supply per environment."
+  type        = string
+  validation {
+    condition     = can(regex("^A[A-Z0-9]+$", var.slack_api_app_id))
+    error_message = "Supply a Slack app ID."
+  }
+}

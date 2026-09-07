@@ -3,6 +3,8 @@ mock_provider "archive" {}
 
 variables {
   state_bucket                   = "test-state"
+  slack_team_id                  = "TTEST"
+  slack_api_app_id               = "ATEST"
   environment                    = "dev"
   log_level                      = "DEBUG"
   point_in_time_recovery_enabled = false
@@ -13,6 +15,8 @@ run "initial_settings" {
 
   assert {
     condition = (
+      output.app_config.ingress.Environment.Variables.SLACK_TEAM_ID == "TTEST" &&
+      output.app_config.ingress.Environment.Variables.SLACK_API_APP_ID == "ATEST" &&
       aws_lambda_function.app["ingress"].timeout == 3 &&
       aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000 &&
       !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
