@@ -15,8 +15,8 @@ locals {
   account_arn   = "arn:${data.aws_partition.current.partition}"
   regional_arn  = "${local.account_arn}:%s:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}"
   oidc_arn      = "${local.account_arn}:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
-  app_role_arns = [for name in ["ingress", "worker"] : "${local.account_arn}:iam::${data.aws_caller_identity.current.account_id}:role/${local.prefix}-${name}"]
-  function_arns = flatten([for name in ["ingress", "worker"] : [
+  app_role_arns = [for name in local.function_names : "${local.account_arn}:iam::${data.aws_caller_identity.current.account_id}:role/${local.prefix}-${name}"]
+  function_arns = flatten([for name in local.function_names : [
     "${format(local.regional_arn, "lambda")}:function:${local.prefix}-${name}",
     "${format(local.regional_arn, "lambda")}:function:${local.prefix}-${name}:*"
   ]])

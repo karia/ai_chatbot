@@ -1,5 +1,5 @@
 resource "aws_iam_role" "app" {
-  for_each             = toset(["ingress", "worker"])
+  for_each             = toset(local.function_names)
   name                 = "${local.prefix}-${each.key}"
   permissions_boundary = aws_iam_policy.runtime_boundary.arn
   assume_role_policy = jsonencode({

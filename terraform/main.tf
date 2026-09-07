@@ -21,7 +21,8 @@ provider "aws" {
 }
 
 locals {
-  prefix = "${var.project_name}-${var.environment}"
+  function_names = ["ingress", "worker"]
+  prefix         = "${var.project_name}-${var.environment}"
 }
 
 resource "aws_bedrockagentcore_memory" "conversation" {

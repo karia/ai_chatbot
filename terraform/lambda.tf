@@ -8,13 +8,13 @@ data "archive_file" "dummy" {
 }
 
 resource "aws_cloudwatch_log_group" "lambda" {
-  for_each          = toset(["ingress", "worker"])
+  for_each          = toset(local.function_names)
   name              = "/aws/lambda/${local.prefix}-${each.key}"
   retention_in_days = 14
 }
 
 resource "aws_lambda_function" "app" {
-  for_each                       = toset(["ingress", "worker"])
+  for_each                       = toset(local.function_names)
   function_name                  = "${local.prefix}-${each.key}"
   role                           = aws_iam_role.app[each.key].arn
   filename                       = data.archive_file.dummy.output_path
