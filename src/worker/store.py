@@ -1,7 +1,10 @@
 """Conditional state writes. Callers retain returned event snapshots for updates."""
 
+import json
+import logging
 import os
 import time
+from decimal import Decimal
 from uuid import uuid4
 
 import boto3
@@ -19,6 +22,18 @@ class Conflict(Exception):
 
 class EventExpired(Exception):
     """The event is outside the retention window; do not execute it."""
+
+
+def _log(level, operation, item=None):
+    threshold = logging.getLevelNamesMapping().get(
+        os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
+    )
+    if level < threshold:
+        return
+    record = {"level": logging.getLevelName(level), "operation": operation}
+    if item and "status" in item:
+        record.update(status=item["status"], attempt=int(item["attempt"]))
+    print(json.dumps(record), flush=True)
 
 
 class Store:
@@ -56,12 +71,16 @@ class Store:
                     {":owner": previous["owner"], ":attempt": previous["attempt"]}
                 )
             if owned:
-                put["ConditionExpression"] += " AND lease_until > :now AND expires_at > :now"
-                put["ExpressionAttributeValues"][":now"] = int(time.time())
+                put["ConditionExpression"] += (
+                    " AND lease_until > :now AND expires_at > :now"
+                )
+                put["ExpressionAttributeValues"][":now"] = Decimal(str(time.time()))
         serializer = TypeSerializer()
         for field in ("Item", "ExpressionAttributeValues"):
             if field in put:
-                put[field] = {key: serializer.serialize(value) for key, value in put[field].items()}
+                put[field] = {
+                    key: serializer.serialize(value) for key, value in put[field].items()
+                }
         return {"Put": put}, item
 
     def _write(self, *writes):
@@ -70,9 +89,14 @@ class Store:
         except ClientError as error:
             if error.response["Error"]["Code"] == "TransactionCanceledException":
                 reasons = error.response.get("CancellationReasons", [])
-                if any(reason.get("Code") == "ConditionalCheckFailed" for reason in reasons):
+                if any(
+                    reason.get("Code") == "ConditionalCheckFailed" for reason in reasons
+                ):
+                    _log(logging.WARNING, "state_conflict")
                     raise Conflict("Conditional state write failed") from error
+            _log(logging.ERROR, "state_write_failed")
             raise
+        _log(logging.INFO, "state_written", writes[0][1])
         return writes[0][1]
 
     def acquire(self, team, event, thread_hash, owner, *, received_at):
@@ -81,7 +105,7 @@ class Store:
         COMPLETED is returned unchanged. Other returned states have a new lease;
         the worker must inspect the saved phase before resuming external work.
         """
-        now = int(time.time())
+        now = Decimal(str(time.time()))
         expires_at = int(received_at) + EVENT_TTL_SECONDS
         if expires_at <= now:
             raise EventExpired()
@@ -94,10 +118,15 @@ class Store:
                 raise Conflict("Event belongs to another session")
             if previous["status"] == "COMPLETED":
                 return previous
-            if previous["status"] == "NEEDS_REVIEW" or previous["lease_until"] > now:
+            if previous["status"] == "NEEDS_REVIEW" or max(
+                previous["lease_until"], previous.get("retry_at", 0)
+            ) > now:
                 raise Conflict("Event is unavailable")
         session = self.get_session(thread_hash)
-        if session and (session.get("stop_reason") or session.get("active_event_id") not in (None, pk)):
+        if session and (
+            session.get("stop_reason")
+            or session.get("active_event_id") not in (None, pk)
+        ):
             raise Conflict("Session is unavailable")
         updated_session = {
             **(session or {"pk": f"SESSION#{thread_hash}", "answer_count": 0}),
@@ -121,7 +150,11 @@ class Store:
         if status not in ("COMPLETED", "NEEDS_REVIEW"):
             return self._write(event_write)
         session = self._get(event["session_pk"])
-        if not session or session.get("active_event_id") != event["pk"] or session.get("stop_reason"):
+        if (
+            not session
+            or session.get("active_event_id") != event["pk"]
+            or session.get("stop_reason")
+        ):
             raise Conflict("Session is unavailable")
         updated_session = {**session, "updated_at": int(time.time())}
         if status == "COMPLETED":
@@ -130,6 +163,29 @@ class Store:
         else:
             updated_session["stop_reason"] = fields["failure"]
         return self._write(event_write, self._put(updated_session, session))
+
+    def bind_memory(self, thread_hash, memory_session_id):
+        """Set the Memory mapping once while preserving session controls."""
+        session = self.get_session(thread_hash)
+        if not session or session.get("memory_session_id", memory_session_id) != memory_session_id:
+            raise Conflict("Memory mapping is unavailable")
+        updated = {
+            **session,
+            "memory_session_id": memory_session_id,
+            "updated_at": int(time.time()),
+        }
+        self._write(self._put(updated, session))
+
+    def started(self, event):
+        """Persist before inference or Memory writes so an interrupted run is identifiable."""
+        return self._transition(event, "RUNNING", {"RUNNING"}, phase="EXECUTING")
+
+    def defer(self, event, retry_at):
+        """Persist a known retryable failure; POSTING requires a definite rejection."""
+        status = "GENERATED" if event["status"] == "POSTING" else event["status"]
+        return self._transition(
+            event, status, {"RUNNING", "GENERATED", "POSTING"}, retry_at=retry_at
+        )
 
     def generated(self, event, reply):
         """Persist only after Memory saving has completed."""
@@ -145,11 +201,13 @@ class Store:
     def needs_review(self, event, failure):
         if not failure:
             raise ValueError("A failure classification is required")
-        return self._transition(event, "NEEDS_REVIEW", {"RUNNING", "GENERATED", "POSTING"}, failure=failure)
+        return self._transition(
+            event, "NEEDS_REVIEW", {"RUNNING", "GENERATED", "POSTING"}, failure=failure
+        )
 
     def reserve_post(self, team, channel):
         """Reserve one second immediately; a conflict must be retried later."""
-        now = int(time.time())
+        now = Decimal(str(time.time()))
         pk = f"RATE#{team}#{channel}"
         previous = self._get(pk)
         if previous and previous["next_post_at"] > now:

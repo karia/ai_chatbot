@@ -137,3 +137,153 @@ def test_lease_expiry_and_invalid_transition_do_not_write(state):
     with pytest.raises(Conflict):
         store.generated(event, "late")
     assert store.get_event("T", "E")["status"] == "RUNNING"
+
+
+@pytest.mark.parametrize("operation", ["acquire", "complete", "reserve"])
+def test_competing_write_after_read_is_rejected(state, monkeypatch, operation):
+    store, table, now = state
+    competitor = Store()
+    if operation == "complete":
+        event = store.posting(store.generated(acquire(store), "answer"))
+        run = lambda target: target.complete(event, "123.456")
+    elif operation == "reserve":
+        run = lambda target: target.reserve_post("T", "C")
+    else:
+        run = lambda target: acquire(target)
+    transact = store.client.transact_write_items
+
+    def race(**kwargs):
+        run(competitor)
+        return transact(**kwargs)
+
+    monkeypatch.setattr(store.client, "transact_write_items", race)
+    with pytest.raises(Conflict):
+        run(store)
+    if operation == "complete":
+        assert store.get_session("thread")["answer_count"] == 1
+
+
+def test_fractional_post_slots_are_a_full_second_apart(state):
+    store, table, now = state
+    now[0] = 1000.9
+    store.reserve_post("T", "C")
+    now[0] = 1001.1
+    with pytest.raises(Conflict):
+        store.reserve_post("T", "C")
+    now[0] = 1001.9
+    store.reserve_post("T", "C")
+
+
+def test_phase_retry_time_and_memory_mapping_survive_resume(state):
+    store, table, now = state
+    event = acquire(store)
+    store.bind_memory("thread", "memory-session")
+    store.bind_memory("thread", "memory-session")
+    with pytest.raises(Conflict):
+        store.bind_memory("thread", "different-memory-session")
+    event = store.started(event)
+    event = store.defer(event, 1300)
+    now[0] = 1180
+    with pytest.raises(Conflict):
+        acquire(store, owner="two")
+    now[0] = 1300
+    resumed = acquire(store, owner="two")
+    assert resumed["phase"] == "EXECUTING"
+    assert resumed["retry_at"] == 1300
+    session = store.get_session("thread")
+    assert session["memory_session_id"] == "memory-session"
+    assert session["active_event_id"] == event["pk"]
+
+
+def test_logs_are_structured_and_level_controlled(state, monkeypatch, capsys):
+    import json
+
+    store, table, now = state
+    event = acquire(store)
+    event = store.generated(event, "private-reply-content")
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[-1]["status"] == "GENERATED"
+    assert records[-1]["level"] == "INFO"
+    assert "private-reply-content" not in str(records)
+    monkeypatch.setenv("LOG_LEVEL", "ERROR")
+    store.posting(event)
+    assert capsys.readouterr().out == ""
+
+
+def test_fractional_lease_expires_after_exactly_180_seconds(state):
+    store, table, now = state
+    now[0] = 1000.9
+    event = acquire(store)
+    now[0] = 1180.1
+    with pytest.raises(Conflict):
+        acquire(store, owner="two")
+    now[0] = 1180.9
+    with pytest.raises(Conflict):
+        store.generated(event, "late")
+    assert acquire(store, owner="two")["attempt"] == 2
+
+
+def test_session_race_rolls_back_event_acquisition(state, monkeypatch):
+    store, table, now = state
+    transact = store.client.transact_write_items
+
+    def race(**kwargs):
+        acquire(Store(), event="other")
+        return transact(**kwargs)
+
+    monkeypatch.setattr(store.client, "transact_write_items", race)
+    with pytest.raises(Conflict):
+        acquire(store)
+    assert store.get_event("T", "E") is None
+    assert store.get_session("thread")["active_event_id"] == "EVENT#T#other"
+
+
+def test_isolation_rolls_back_session_stop_on_stale_event(state, monkeypatch):
+    store, table, now = state
+    event = acquire(store)
+    transact = store.client.transact_write_items
+
+    def race(**kwargs):
+        Store().started(event)
+        return transact(**kwargs)
+
+    monkeypatch.setattr(store.client, "transact_write_items", race)
+    with pytest.raises(Conflict):
+        store.needs_review(event, "unknown")
+    assert "stop_reason" not in store.get_session("thread")
+    assert store.get_event("T", "E")["status"] == "RUNNING"
+
+
+def test_expired_deleted_event_cannot_be_recreated_with_original_receipt(state):
+    store, table, now = state
+    event = acquire(store)
+    table.delete_item(Key={"pk": event["pk"]})
+    now[0] = event["expires_at"]
+    with pytest.raises(EventExpired):
+        acquire(store)
+
+
+def test_definite_post_rejection_can_resume_after_retry_time(state):
+    store, table, now = state
+    event = store.posting(store.generated(acquire(store), "answer"))
+    store.defer(event, 1400)
+    now[0] = 1400
+    resumed = acquire(store, owner="two")
+    assert resumed["status"] == "GENERATED"
+    assert resumed["reply"] == "answer"
+    store.complete(store.posting(resumed), "123.456")
+    assert store.get_session("thread")["answer_count"] == 1
+
+
+def test_storage_failures_are_not_reported_as_contention(state, monkeypatch):
+    from botocore.exceptions import ClientError
+
+    store, table, now = state
+
+    def fail(**kwargs):
+        raise ClientError({"Error": {"Code": "AccessDeniedException"}}, "TransactWriteItems")
+
+    monkeypatch.setattr(store.client, "transact_write_items", fail)
+    with pytest.raises(ClientError):
+        acquire(store)
+    assert store.get_event("T", "E") is None
