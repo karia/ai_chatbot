@@ -37,7 +37,7 @@ def _signing_secret(now):
     global _secret
     reference = os.environ["SIGNING_SECRET_ARN"]
     if _secret is None or _secret[0] != reference or now >= _secret[2]:
-        value = _client("secretsmanager").get_secret_value(SecretId=reference)["SecretString"]
+        value = _client("secretsmanager").get_secret_value(SecretId=reference).get("SecretString")
         if not isinstance(value, str) or not value:
             raise ValueError("Invalid signing secret")
         _secret = (reference, value, now + 300)
@@ -75,7 +75,9 @@ def lambda_handler(event, context):
         return _respond(400, "invalid_payload", started, level="WARN")
     try:
         secret = _signing_secret(now)
-    except (BotoCoreError, ClientError, KeyError, ValueError):
+    except KeyError:
+        return _respond(503, "invalid_configuration", started, level="ERROR")
+    except (BotoCoreError, ClientError, ValueError):
         return _respond(503, "secret_unavailable", started, level="ERROR")
     if not verify(body, headers, secret, now):
         return _respond(401, "invalid_signature", started, level="WARN")
@@ -111,6 +113,8 @@ def lambda_handler(event, context):
         )
         if not result or not result.get("MessageId"):
             return _respond(503, "queue_failed", started, level="ERROR", **fields)
-    except (BotoCoreError, ClientError, KeyError):
+    except KeyError:
+        return _respond(503, "invalid_configuration", started, level="ERROR", **fields)
+    except (BotoCoreError, ClientError):
         return _respond(503, "queue_failed", started, level="ERROR", **fields)
     return _respond(200, "queued", started, **fields)

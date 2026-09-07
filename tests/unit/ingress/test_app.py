@@ -128,10 +128,11 @@ def test_unknown_send_result_is_not_acknowledged(aws, payload, result):
     assert app.lambda_handler(request(payload), None)["statusCode"] == 503
 
 
-def test_send_failure_is_not_acknowledged(aws, payload):
+def test_send_failure_is_not_acknowledged(aws, payload, capsys):
     from botocore.exceptions import EndpointConnectionError
     aws.send_message.side_effect = EndpointConnectionError(endpoint_url="https://example.com")
     assert app.lambda_handler(request(payload), None)["statusCode"] == 503
+    assert json.loads(capsys.readouterr().out)["state"] == "queue_failed"
 
 
 @pytest.mark.parametrize("payload", [[], None, {}, {"type": "url_verification"}, {"type": "url_verification", "challenge": 1}])
@@ -204,7 +205,9 @@ def test_secret_failure_is_retryable_and_not_logged(aws, payload, capsys):
     )
     assert app.lambda_handler(request(payload), None)["statusCode"] == 503
     aws.send_message.assert_not_called()
-    assert SECRET not in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert SECRET not in output
+    assert json.loads(output)["state"] == "secret_unavailable"
 
 
 @pytest.mark.parametrize("level,logged", [("DEBUG", True), ("INFO", True), ("WARN", False), ("ERROR", False)])
@@ -252,10 +255,11 @@ def test_signed_invalid_json(aws):
 
 
 @pytest.mark.parametrize("field", ["SLACK_TEAM_ID", "SLACK_API_APP_ID", "QUEUE_URL", "SIGNING_SECRET_ARN"])
-def test_missing_configuration_fails_closed(aws, payload, monkeypatch, field):
+def test_missing_configuration_fails_closed(aws, payload, monkeypatch, field, capsys):
     monkeypatch.delenv(field)
     assert app.lambda_handler(request(payload), None)["statusCode"] == 503
     aws.send_message.assert_not_called()
+    assert json.loads(capsys.readouterr().out)["state"] == "invalid_configuration"
 
 
 def test_packaged_handler_imports(tmp_path):
