@@ -24,6 +24,10 @@ class EventExpired(Exception):
     """The event is outside the retention window; do not execute it."""
 
 
+def _now():
+    return Decimal(str(time.time()))
+
+
 def _log(level, operation, item=None):
     threshold = logging.getLevelNamesMapping().get(
         os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
@@ -51,7 +55,7 @@ class Store:
 
     def get_event(self, team, event):
         item = self._get(f"EVENT#{team}#{event}")
-        return item if item and item["expires_at"] > int(time.time()) else None
+        return item if item and item["expires_at"] > _now() else None
 
     def get_session(self, thread_hash):
         return self._get(f"SESSION#{thread_hash}")
@@ -74,7 +78,7 @@ class Store:
                 put["ConditionExpression"] += (
                     " AND lease_until > :now AND expires_at > :now"
                 )
-                put["ExpressionAttributeValues"][":now"] = Decimal(str(time.time()))
+                put["ExpressionAttributeValues"][":now"] = _now()
         serializer = TypeSerializer()
         for field in ("Item", "ExpressionAttributeValues"):
             if field in put:
@@ -108,7 +112,7 @@ class Store:
         COMPLETED is returned unchanged. Other returned states have a new lease;
         the worker must inspect the saved phase before resuming external work.
         """
-        now = Decimal(str(time.time()))
+        now = _now()
         expires_at = int(received_at) + EVENT_TTL_SECONDS
         if expires_at <= now:
             raise EventExpired()
@@ -159,7 +163,7 @@ class Store:
             or session.get("stop_reason")
         ):
             raise Conflict("Session is unavailable")
-        updated_session = {**session, "updated_at": int(time.time())}
+        updated_session = {**session, "updated_at": _now()}
         if status == "COMPLETED":
             del updated_session["active_event_id"]
             updated_session["answer_count"] += 1
@@ -175,7 +179,7 @@ class Store:
         updated = {
             **session,
             "memory_session_id": memory_session_id,
-            "updated_at": int(time.time()),
+            "updated_at": _now(),
         }
         self._write(self._put(updated, session))
 
@@ -211,7 +215,7 @@ class Store:
 
     def reserve_post(self, team, channel):
         """Reserve one second immediately; a conflict must be retried later."""
-        now = Decimal(str(time.time()))
+        now = _now()
         pk = f"RATE#{team}#{channel}"
         previous = self._get(pk)
         if previous and previous["next_post_at"] > now:

@@ -342,3 +342,19 @@ def test_transaction_conflict_is_retryable_and_logged_as_warning(state, monkeypa
         "level": "WARNING", "operation": "state_conflict"
     }
     assert store.get_event("T", "E") is None
+
+
+def test_session_update_times_preserve_fractional_seconds(state):
+    from decimal import Decimal
+
+    store, table, now = state
+    now[0] = 1000.25
+    event = acquire(store)
+    assert store.get_session("thread")["updated_at"] == Decimal("1000.25")
+    now[0] = 1000.5
+    store.bind_memory("thread", "memory-session")
+    assert store.get_session("thread")["updated_at"] == Decimal("1000.5")
+    event = store.posting(store.generated(event, "answer"))
+    now[0] = 1000.75
+    store.complete(event, "123.456")
+    assert store.get_session("thread")["updated_at"] == Decimal("1000.75")
