@@ -12,7 +12,6 @@ key    = "ai-chatbot/dev/terraform.tfstate"
 ```
 
 同じバケット名を`TF_VAR_state_bucket`へ設定する。
-Makefileはworkspaceの一覧取得用prefixを`ai-chatbot/<env>/workspaces`に設定する。
 workspaceは`default`を使う。
 
 Secrets Managerに`<project_name>-<environment>/slack-signing-secret`と`<project_name>-<environment>/slack-bot-token`を作り、それぞれの値を保存する。

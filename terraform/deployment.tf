@@ -99,7 +99,7 @@ resource "aws_iam_role_policy" "deploy" {
         Effect    = "Allow"
         Action    = ["s3:ListBucket"]
         Resource  = "${local.account_arn}:s3:::${var.state_bucket}"
-        Condition = { StringLike = { "s3:prefix" = [local.state_key, "${local.state_key}.tflock", "ai-chatbot/${var.environment}/workspaces/"] } }
+        Condition = { StringLike = { "s3:prefix" = [local.state_key, "${local.state_key}.tflock"] } }
       },
       {
         Effect   = "Allow"

@@ -14,7 +14,7 @@ build:
 init-infra:
 	test -f terraform/$(ENV).tfvars || { echo "Missing file: terraform/$(ENV).tfvars" >&2; exit 1; }
 	test -f terraform/$(ENV).tfbackend || { echo "Missing file: terraform/$(ENV).tfbackend" >&2; exit 1; }
-	terraform -chdir=terraform init -reconfigure -backend-config=$(ENV).tfbackend -backend-config=workspace_key_prefix=ai-chatbot/$(ENV)/workspaces
+	terraform -chdir=terraform init -reconfigure -backend-config=$(ENV).tfbackend
 
 deploy-infra: init-infra
 	terraform -chdir=terraform apply -var-file=$(ENV).tfvars

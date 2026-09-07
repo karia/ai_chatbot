@@ -59,7 +59,6 @@ jobs:
           Path(f'terraform/{env}.tfbackend').write_text(
               f'bucket = {json.dumps(bucket)}\n'
               f'key = "ai-chatbot/{env}/terraform.tfstate"\n'
-              f'workspace_key_prefix = "ai-chatbot/{env}/workspaces"\n'
           )
           PY
       - name: Deploy infrastructure
