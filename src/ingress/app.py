@@ -16,6 +16,8 @@ else:
     from signature import verify
 
 
+MAX_MESSAGE_BYTES = 128 * 1024
+
 _clients = {}
 _secret = None
 
@@ -102,7 +104,7 @@ def lambda_handler(event, context):
     except KeyError:
         return _respond(503, "invalid_configuration", started, level="ERROR")
     fields = {"event_id": message["event_id"], "message_bytes": message_bytes}
-    if message_bytes > 128 * 1024:
+    if message_bytes > MAX_MESSAGE_BYTES:
         return _respond(413, "oversized", started, level="WARN", oversized_count=1, **fields)
     try:
         result = _client("sqs").send_message(
