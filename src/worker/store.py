@@ -61,6 +61,7 @@ class Store:
         return self._get(f"SESSION#{thread_hash}")
 
     def _put(self, item, previous, *, owned=False):
+        """Check owner/attempt alongside revision matching as defense in depth."""
         item = {**item, "revision": uuid4().hex}
         put = {"TableName": self.table_name, "Item": item}
         if previous is None:
