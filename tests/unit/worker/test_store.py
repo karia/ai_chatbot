@@ -300,3 +300,19 @@ def test_isolation_is_logged_at_error_level(state, monkeypatch, capsys):
     record = json.loads(capsys.readouterr().out)
     assert record["level"] == "ERROR"
     assert record["status"] == "NEEDS_REVIEW"
+
+
+def test_defer_accepts_float_retry_time(state):
+    from decimal import Decimal
+    import time
+
+    store, table, now = state
+    event = acquire(store)
+    deferred = store.defer(event, time.time() + 300.5)
+    assert deferred["retry_at"] == Decimal("1300.5")
+    assert store.get_event("T", "E")["retry_at"] == Decimal("1300.5")
+    now[0] = 1300.4
+    with pytest.raises(Conflict):
+        acquire(store, owner="two")
+    now[0] = 1300.5
+    assert acquire(store, owner="two")["attempt"] == 2

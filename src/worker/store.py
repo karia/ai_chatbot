@@ -184,6 +184,7 @@ class Store:
 
     def defer(self, event, retry_at):
         """Persist a known retryable failure; POSTING requires a definite rejection."""
+        retry_at = Decimal(str(retry_at))
         status = "GENERATED" if event["status"] == "POSTING" else event["status"]
         return self._transition(
             event, status, {"RUNNING", "GENERATED", "POSTING"}, retry_at=retry_at
