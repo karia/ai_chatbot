@@ -287,3 +287,16 @@ def test_storage_failures_are_not_reported_as_contention(state, monkeypatch):
     with pytest.raises(ClientError):
         acquire(store)
     assert store.get_event("T", "E") is None
+
+
+def test_isolation_is_logged_at_error_level(state, monkeypatch, capsys):
+    import json
+
+    store, table, now = state
+    event = acquire(store)
+    capsys.readouterr()
+    monkeypatch.setenv("LOG_LEVEL", "ERROR")
+    store.needs_review(event, "memory_unknown")
+    record = json.loads(capsys.readouterr().out)
+    assert record["level"] == "ERROR"
+    assert record["status"] == "NEEDS_REVIEW"

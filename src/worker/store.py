@@ -96,8 +96,10 @@ class Store:
                     raise Conflict("Conditional state write failed") from error
             _log(logging.ERROR, "state_write_failed")
             raise
-        _log(logging.INFO, "state_written", writes[0][1])
-        return writes[0][1]
+        item = writes[0][1]
+        level = logging.ERROR if item.get("status") == "NEEDS_REVIEW" else logging.INFO
+        _log(level, "state_written", item)
+        return item
 
     def acquire(self, team, event, thread_hash, owner, *, received_at):
         """Use the original receipt time on every delivery; never renew event TTL.
