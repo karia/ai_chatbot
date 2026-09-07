@@ -235,6 +235,8 @@ Lambdaの実行時間切れ（`Sandbox.Timedout`）を起こし、保存済み�
 
 ## 実機検証の構成と再現手順
 
+検証ハーネスと以下の構成は、計画のPR 3（GitHub上は#30）のマージ時点のcommit`4accb8a`に残っている。
+
 検証用LambdaはPython 3.14、arm64、512 MiB、タイムアウト20秒で実行する。
 Strandsのモデルは固定テキストを返す検証用実装であり、会話の保存先は東京のAgentCore Memoryである。
 Bedrockのモデル推論とtool useの互換性は、この検証の対象に含まれない。

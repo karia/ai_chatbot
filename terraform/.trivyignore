@@ -6,3 +6,11 @@ AVD-AWS-0017
 # AVD-AWS-0066: Lambda X-Ray tracing is not enabled in Terraform.
 # Tracing is configured with the rest of the monitoring work, not in this stack.
 AVD-AWS-0066
+
+# AVD-AWS-0025: DynamoDB uses the AWS managed KMS key for encryption at rest.
+# Separate customer-managed key administration is not required for this table.
+AVD-AWS-0025
+
+# AVD-AWS-0024: Development data is disposable, so dev disables PITR to reduce cost.
+# Production enables PITR in prod.tfvars; the environment contract test checks it.
+AVD-AWS-0024

@@ -1,12 +1,23 @@
-output "lambda_function_name" {
-  value = aws_lambda_function.verification.function_name
+output "slack_events_url" {
+  value = "${aws_apigatewayv2_api.slack.api_endpoint}/slack/events"
 }
-output "lambda_role_arn" {
-  value = aws_iam_role.verification.arn
-}
-output "memory_id" {
-  value = aws_bedrockagentcore_memory.verification.id
-}
-output "aws_region" {
-  value = data.aws_region.current.region
+
+output "app_config" {
+  value = {
+    for name, fn in aws_lambda_function.app : name => {
+      FunctionName = fn.function_name
+      Role         = aws_iam_role.app[name].arn
+      Timeout      = name == "worker" ? var.worker_timeout : 3
+      Environment = { Variables = merge({
+        LOG_LEVEL = var.log_level
+        }, name == "ingress" ? {
+        SIGNING_SECRET_ARN = data.aws_secretsmanager_secret.signing.arn
+        QUEUE_URL          = aws_sqs_queue.events.url
+        } : {
+        BOT_TOKEN_SECRET_ARN = data.aws_secretsmanager_secret.bot.arn
+        DYNAMODB_TABLE_NAME  = aws_dynamodb_table.state.name
+        MEMORY_ID            = aws_bedrockagentcore_memory.conversation.id
+      }) }
+    }
+  }
 }
