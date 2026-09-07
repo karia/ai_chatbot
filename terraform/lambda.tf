@@ -18,6 +18,7 @@ resource "aws_lambda_function" "app" {
   function_name                  = "${local.prefix}-${each.key}"
   role                           = aws_iam_role.app[each.key].arn
   filename                       = data.archive_file.dummy.output_path
+  publish                        = true
   runtime                        = "python3.14"
   handler                        = "app.lambda_handler"
   architectures                  = ["arm64"]
@@ -31,9 +32,19 @@ resource "aws_lambda_function" "app" {
 
 resource "aws_lambda_event_source_mapping" "worker" {
   event_source_arn = aws_sqs_queue.events.arn
-  function_name    = aws_lambda_function.app["worker"].arn
+  function_name    = aws_lambda_alias.current["worker"].arn
   batch_size       = 1
   scaling_config {
     maximum_concurrency = var.worker_concurrency
+  }
+}
+
+resource "aws_lambda_alias" "current" {
+  for_each         = aws_lambda_function.app
+  name             = "current"
+  function_name    = each.value.function_name
+  function_version = each.value.version
+  lifecycle {
+    ignore_changes = [function_version, routing_config]
   }
 }

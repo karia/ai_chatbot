@@ -27,6 +27,7 @@ locals {
 resource "aws_bedrockagentcore_memory" "conversation" {
   name                  = "${replace(local.prefix, "-", "_")}_conversation"
   event_expiry_duration = 30
+  tags                  = { ProjectEnvironment = local.prefix }
 }
 
 data "aws_secretsmanager_secret" "signing" {

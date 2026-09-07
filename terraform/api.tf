@@ -31,7 +31,7 @@ resource "aws_apigatewayv2_stage" "slack" {
 resource "aws_apigatewayv2_integration" "ingress" {
   api_id                 = aws_apigatewayv2_api.slack.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.app["ingress"].invoke_arn
+  integration_uri        = aws_lambda_alias.current["ingress"].invoke_arn
   payload_format_version = "2.0"
   timeout_milliseconds   = 5000
 }
@@ -46,6 +46,7 @@ resource "aws_lambda_permission" "ingress" {
   statement_id  = "AllowSlackEvents"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.app["ingress"].function_name
+  qualifier     = aws_lambda_alias.current["ingress"].name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.slack.execution_arn}/*/POST/slack/events"
 }
