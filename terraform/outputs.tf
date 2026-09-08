@@ -7,7 +7,7 @@ output "app_config" {
     for name, fn in aws_lambda_function.app : name => {
       FunctionName = fn.function_name
       Role         = aws_iam_role.app[name].arn
-      Timeout      = name == "worker" ? var.worker_timeout : 3
+      Timeout      = name == "worker" ? var.worker_timeout : var.ingress_timeout
       Environment = { Variables = merge({
         LOG_LEVEL = var.log_level
         }, name == "ingress" ? {

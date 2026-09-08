@@ -216,7 +216,7 @@ FIFOの順序はキューへの投入順であり、Slack側で遅延したイ�
 
 | 設定 | 初期値 |
 | --- | --- |
-| 受付Lambdaタイムアウト | 3秒 |
+| 受付Lambdaタイムアウト | 10秒 |
 | ワーカーLambdaタイムアウト | 120秒 |
 | エージェント処理予算 | 90秒 |
 | モデル呼び出し上限 | 8回/イベント |
@@ -230,6 +230,9 @@ FIFOの順序はキューへの投入順であり、Slack側で遅延したイ�
 | DLQ保持期間 | 14日 |
 | `maxReceiveCount` | 5 |
 | イベント処理状態の保持期間 | 30日 |
+
+受付Lambdaのタイムアウトは、遅延時にもSQS投入を完了するための実行上限とする。
+Slackへの応答期限は3秒のまま、API Gatewayの統合タイムアウトは5秒とし、受付Lambdaには10秒の実行時間を確保する。
 
 FIFOにはバッチウィンドウを設定しない。
 可視性タイムアウトはLambdaタイムアウトの6倍を初期値とする。[LambdaのSQS設定](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html)

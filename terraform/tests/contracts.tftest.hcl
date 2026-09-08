@@ -19,7 +19,9 @@ run "initial_settings" {
       !contains(keys(output.app_config.ingress.Environment.Variables), "SIGNING_SECRET_ARN") &&
       output.app_config.ingress.Environment.Variables.SLACK_TEAM_ID == "TTEST" &&
       output.app_config.ingress.Environment.Variables.SLACK_API_APP_ID == "ATEST" &&
-      aws_lambda_function.app["ingress"].timeout == 3 &&
+      aws_lambda_function.app["ingress"].timeout == 10 &&
+      output.app_config.ingress.Timeout == 10 &&
+      aws_lambda_function.app["ingress"].timeout * 1000 > aws_apigatewayv2_integration.ingress.timeout_milliseconds &&
       aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000 &&
       !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
       aws_lambda_function.app["worker"].timeout == 120 &&
@@ -65,6 +67,29 @@ run "production_isolation" {
     )
     error_message = "Production resource and secret names must be isolated from development."
   }
+}
+
+run "custom_ingress_timeout" {
+  command = plan
+  variables {
+    ingress_timeout = 12
+  }
+  assert {
+    condition = (
+      aws_lambda_function.app["ingress"].timeout == 12 &&
+      output.app_config.ingress.Timeout == 12 &&
+      aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000
+    )
+    error_message = "Ingress timeout must reach both Terraform and lambroll without changing the API timeout."
+  }
+}
+
+run "reject_short_ingress_timeout" {
+  command = plan
+  variables {
+    ingress_timeout = 5
+  }
+  expect_failures = [var.ingress_timeout]
 }
 
 run "secret_permissions" {

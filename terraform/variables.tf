@@ -23,6 +23,16 @@ variable "log_level" {
   }
 }
 
+variable "ingress_timeout" {
+  description = "Execution ceiling in seconds for completing delayed SQS delivery, independent of Slack's acknowledgement deadline. Must exceed the API integration timeout."
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.ingress_timeout > 5 && var.ingress_timeout <= 900 && floor(var.ingress_timeout) == var.ingress_timeout
+    error_message = "Ingress timeout must be an integer from 6 to 900 seconds, exceeding the 5-second API integration timeout."
+  }
+}
+
 variable "worker_timeout" {
   type    = number
   default = 120
