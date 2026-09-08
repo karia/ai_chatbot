@@ -17,8 +17,6 @@ run "initial_settings" {
     condition = (
       !contains(keys(output.app_config.ingress.Environment.Variables), "SLACK_SIGNING_SECRET") &&
       !contains(keys(output.app_config.ingress.Environment.Variables), "SIGNING_SECRET_ARN") &&
-      !strcontains(aws_iam_role_policy.app["ingress"].policy, "secretsmanager:GetSecretValue") &&
-      strcontains(aws_iam_role_policy.app["worker"].policy, "secretsmanager:GetSecretValue") &&
       output.app_config.ingress.Environment.Variables.SLACK_TEAM_ID == "TTEST" &&
       output.app_config.ingress.Environment.Variables.SLACK_API_APP_ID == "ATEST" &&
       aws_lambda_function.app["ingress"].timeout == 3 &&
@@ -66,5 +64,20 @@ run "production_isolation" {
       data.aws_secretsmanager_secret.bot.name == "ai-chatbot-prod/slack-bot-token"
     )
     error_message = "Production resource and secret names must be isolated from development."
+  }
+}
+
+run "secret_permissions" {
+  command = apply
+  plan_options {
+    target = [aws_iam_role_policy.app]
+  }
+
+  assert {
+    condition = (
+      !strcontains(aws_iam_role_policy.app["ingress"].policy, "secretsmanager:GetSecretValue") &&
+      strcontains(aws_iam_role_policy.app["worker"].policy, "secretsmanager:GetSecretValue")
+    )
+    error_message = "Only the worker may retrieve Secrets Manager values."
   }
 }
