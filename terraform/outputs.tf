@@ -11,10 +11,9 @@ output "app_config" {
       Environment = { Variables = merge({
         LOG_LEVEL = var.log_level
         }, name == "ingress" ? {
-        SLACK_TEAM_ID      = var.slack_team_id
-        SLACK_API_APP_ID   = var.slack_api_app_id
-        SIGNING_SECRET_ARN = data.aws_secretsmanager_secret.signing.arn
-        QUEUE_URL          = aws_sqs_queue.events.url
+        SLACK_TEAM_ID    = var.slack_team_id
+        SLACK_API_APP_ID = var.slack_api_app_id
+        QUEUE_URL        = aws_sqs_queue.events.url
         } : {
         BOT_TOKEN_SECRET_ARN = data.aws_secretsmanager_secret.bot.arn
         DYNAMODB_TABLE_NAME  = aws_dynamodb_table.state.name

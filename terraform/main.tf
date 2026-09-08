@@ -31,10 +31,6 @@ resource "aws_bedrockagentcore_memory" "conversation" {
   tags                  = { ProjectEnvironment = local.prefix }
 }
 
-data "aws_secretsmanager_secret" "signing" {
-  name = "${local.prefix}/slack-signing-secret"
-}
-
 data "aws_secretsmanager_secret" "bot" {
   name = "${local.prefix}/slack-bot-token"
 }

@@ -26,15 +26,15 @@ resource "aws_iam_role_policy" "app" {
       },
       {
         Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = each.key == "ingress" ? data.aws_secretsmanager_secret.signing.arn : data.aws_secretsmanager_secret.bot.arn
-      },
-      {
-        Effect   = "Allow"
         Action   = each.key == "ingress" ? ["sqs:SendMessage"] : ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
         Resource = aws_sqs_queue.events.arn
       }
       ], each.key == "worker" ? [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_secretsmanager_secret.bot.arn
+      },
       {
         Effect   = "Allow"
         Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]

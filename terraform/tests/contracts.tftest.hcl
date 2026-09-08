@@ -15,6 +15,10 @@ run "initial_settings" {
 
   assert {
     condition = (
+      !contains(keys(output.app_config.ingress.Environment.Variables), "SLACK_SIGNING_SECRET") &&
+      !contains(keys(output.app_config.ingress.Environment.Variables), "SIGNING_SECRET_ARN") &&
+      !strcontains(aws_iam_role_policy.app["ingress"].policy, "secretsmanager:GetSecretValue") &&
+      strcontains(aws_iam_role_policy.app["worker"].policy, "secretsmanager:GetSecretValue") &&
       output.app_config.ingress.Environment.Variables.SLACK_TEAM_ID == "TTEST" &&
       output.app_config.ingress.Environment.Variables.SLACK_API_APP_ID == "ATEST" &&
       aws_lambda_function.app["ingress"].timeout == 3 &&
@@ -59,7 +63,6 @@ run "production_isolation" {
       aws_sqs_queue.events.name == "ai-chatbot-prod-events.fifo" &&
       aws_dynamodb_table.state.name == "ai-chatbot-prod-state" &&
       aws_bedrockagentcore_memory.conversation.name == "ai_chatbot_prod_conversation" &&
-      data.aws_secretsmanager_secret.signing.name == "ai-chatbot-prod/slack-signing-secret" &&
       data.aws_secretsmanager_secret.bot.name == "ai-chatbot-prod/slack-bot-token"
     )
     error_message = "Production resource and secret names must be isolated from development."
