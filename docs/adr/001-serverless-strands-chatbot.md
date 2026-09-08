@@ -113,7 +113,7 @@ Gatewayの接続、最終SQS送信、AWS認証を既存PrometheusとLokiで監�
 
 採用理由は次のとおりである。
 
-- [コスト試算の仮定に基づく月額差](002-hybrid-k3s-strands-chatbot.md#両案の比較結果)は同じ利用量でSlackのみUSD 2.68、Discord込みUSD 3.92であり、運用対象を増やす理由としては小さい。
+- [コスト試算の仮定に基づく月額差](002-hybrid-k3s-strands-chatbot.md#両案の比較結果)は同じ利用量でSlackのみUSD 2.28、Discord込みUSD 3.52であり、運用対象を増やす理由としては小さい。
 - ハイブリッド案はホスト保守、IAM Roles Anywhereの証明書運用、長期保存ファイルを扱う場合のMinIOのバックアップを増やし、数時間の停止と受信欠落の許容を前提とする。
 - ADR-001ではSlackの受付と投入済みジョブの処理をホスト保守から切り離せる。
 
@@ -134,8 +134,7 @@ flowchart TD
     Worker --> Bedrock[Amazon Bedrock]
     Worker --> Tools[URL・添付の読み取りツール]
     Worker --> WebAPI[Slack Web API: スレッド返信]
-    Secrets[Secrets Manager] --> Ingress
-    Secrets --> Worker
+    Secrets[Secrets Manager] --> Worker
     Ingress --> Logs[CloudWatch: メトリクス・ログ]
     Worker --> Logs
     Worker -. 将来 .-> Gateway[AgentCore Gateway: MCPツール]
@@ -154,7 +153,7 @@ flowchart TD
 | Amazon Bedrock | モデル推論 |
 | AgentCore Memory | セッションの永続化 |
 | DynamoDB | 冪等性と処理の進捗管理 |
-| Secrets Manager | SlackのSigning SecretとBot Tokenの保管 |
+| Secrets Manager | SlackのBot Tokenの保管 |
 | CloudWatch | 障害検知と稼働状況の計測 |
 
 Strands Agentsはアプリケーションに組み込むSDKであり、マネージドサービスとしての会話保存はAgentCore Memoryが担う。
@@ -365,11 +364,18 @@ BrowserやCode Interpreter、外部サービスへの書き込みは独立した
 ## セキュリティと運用
 
 受付とワーカーのIAMロールを分離する。
-受付にはSigning Secretの取得と対象キューへの送信を許可する。
+受付には対象キューへの送信を許可する。
 ワーカーには対象キューの受信・削除、処理テーブル、Memoryデータプレーン、採用するBedrockモデル、Bot Tokenへのアクセスを許可する。
 Memory作成やIAM変更の権限はデプロイ用ロールに集約する。
 会話内容を含むCloudWatch Logsの閲覧権限は、調査に必要な運用者のIAMロールと対象ロググループに限定する。
 秘密値はSecrets Managerから取得し、環境変数には参照先を設定する。
+受付が使うSigning Secretだけは例外とし、Lambdaの環境変数へ値を直接置く。
+
+Slackは受付へのリクエストに対し3秒以内のHTTP 2xxを要求し、失敗が60分間の配送試行の95%を超えるとイベント購読を一時的に無効化する。[Slackのイベント配送要件](https://docs.slack.dev/apis/events-api/)
+Signing SecretをSecrets Managerから取得すると、この3秒の予算にネットワーク呼び出しと外部サービスの可用性が加わる。
+署名検証は受付の全リクエストが通る経路であり、ここを外部依存から切り離す。
+値はデプロイ時に配布し、Terraformの管理下にもtfstateにも置かない。
+Bot Tokenはワーカーが使い3秒の制約を受けないため、Secrets Managerのまま残す。
 
 Slackの初期スコープは`app_mentions:read`、`chat:write`、添付取得用の`files:read`を基本とする。
 Slack履歴取得を常用する機能を外すため、履歴スコープは復旧方法や将来機能で必要性を確認して追加する。
@@ -594,11 +600,11 @@ DynamoDBはトランザクション、項目サイズ、リース更新を含め
 | Lambda | 9,015 GB秒と600リクエスト | 0.15037 |
 | HTTP API | 300 × 0.00000129 | 0.00039 |
 | SQS FIFO | 648,900 × 0.0000005 | 0.32445 |
-| Secrets Manager | 2秘密値 × 0.40 + 600取得 × 0.000005 | 0.80300 |
+| Secrets Manager | 1秘密値 × 0.40 + 300取得 × 0.000005 | 0.40150 |
 | CloudWatch | 下記のメトリクス、アラーム、ログ | 2.30777 |
 | 外向き転送 | 0.01 GB × 0.114 | 0.00114 |
 | S3 | ファイル保存を追加するまで0 | 0.00000 |
-| 合計 | 丸め前の金額を合算 | 18.01184 |
+| 合計 | 丸め前の金額を合算 | 17.61034 |
 
 LambdaにはUSD 0.0000166667/GB秒とUSD 0.20/100万リクエスト、HTTP APIにはUSD 1.29/100万リクエストを使用した。[Lambdaの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/ap-northeast-1/index.json)、[API Gatewayの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/ap-northeast-1/index.json)
 
@@ -611,7 +617,7 @@ CloudWatchは集約したカスタムメトリクス5個、標準アラーム8�
 `5 × 0.30 + 8 × 0.10 + 0.01 × 0.76 + 0.005 × 0.033 = USD 2.307765/月`となる。
 イベントIDをメトリクスのdimensionに使わず、メトリクス数の増加を防ぐ。[CloudWatchの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-1/index.json)
 
-秘密値はSigning SecretとSlack Bot Tokenの2件とする。[Secrets Managerの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-northeast-1/index.json)
+秘密値はワーカーが使うSlack Bot Tokenの1件とする。受付のSigning Secretは環境変数へ移したため計上しない。[Secrets Managerの東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-northeast-1/index.json)
 外向き転送には無料枠控除前の東京単価を使う。[転送の東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/ap-northeast-1/index.json)
 S3を追加し、平均1 GB、月100 PUTと100 GETを使う場合は、`0.025 + 100 × 0.0000047 + 100 × 0.00000037 = USD 0.025507/月`を加算する。[S3の東京料金データ](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.json)
 
@@ -634,10 +640,10 @@ CAを別途契約する場合は固定費を追加する。[IAM Roles Anywhere�
 月間300回の回答を両プラットフォームで分け合い、モデルとSQSの費用は基本表の枠内で計上する。
 受付費用は全300件がSlack経由という基本表を据え置く保守的な比較とし、Discord受信分の受付LambdaとHTTP APIの減少は控除しない。
 SQSの受信はLambdaが管理するため、Gateway用の空ポーリング費用は追加しない。
-AWS側は`USD 18.0118398005 + 0.40050 = 約USD 18.41/月`となる。
+AWS側は`USD 17.6103398005 + 0.40050 = 約USD 18.01/月`となる。
 
 Gatewayと監視の増分電力に5 W、電力単価に35円/kWhの仮定を置くと、`5 ÷ 1,000 × 720 × 35 = 126円/月`となる。
-1 USD＝150円の比較用換算では、`18.4123398005 + 126 ÷ 150 = 約USD 19.25/月`となる。
+1 USD＝150円の比較用換算では、`18.0108398005 + 126 ÷ 150 = 約USD 18.85/月`となる。
 ADR-002も同じ5 Wの計算枠を使用しており、Gatewayだけの場合の省電力効果は実測まで織り込まない。
 既存ホストと回線の新設費用、証明書運用、設備増設は別途加算する。
 
