@@ -46,15 +46,13 @@ def payload():
 def aws(monkeypatch):
     monkeypatch.setenv("SLACK_TEAM_ID", "TTEST")
     monkeypatch.setenv("SLACK_API_APP_ID", "ATEST")
-    monkeypatch.setenv("SIGNING_SECRET_ARN", "test-signing-reference")
+    monkeypatch.setenv("SLACK_SIGNING_SECRET", SECRET)
     monkeypatch.setenv("QUEUE_URL", "https://example.com/events.fifo")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setattr(app.time, "time", lambda: NOW)
     client = Mock()
-    client.get_secret_value.return_value = {"SecretString": SECRET}
     client.send_message.return_value = {"MessageId": "message-test"}
     monkeypatch.setattr(app, "_clients", {})
-    monkeypatch.setattr(app, "_secret", None)
     monkeypatch.setattr(app.boto3, "client", Mock(return_value=client))
     return client
 
@@ -190,25 +188,16 @@ def test_message_size_boundary_and_metric(aws, payload, capsys):
     assert records[-1]["level"] == "WARN"
 
 
-def test_secret_cache_expires(aws, payload, monkeypatch):
-    app.lambda_handler(request(payload), None)
-    app.lambda_handler(request(payload), None)
-    aws.get_secret_value.assert_called_once_with(SecretId="test-signing-reference")
-    monkeypatch.setattr(app.time, "time", lambda: NOW + 300)
-    app.lambda_handler(request(payload, timestamp=NOW + 300), None)
-    assert aws.get_secret_value.call_count == 2
+def test_signing_secret_is_read_from_environment(aws, payload):
+    assert app.lambda_handler(request(payload), None)["statusCode"] == 200
+    assert [call.args[0] for call in app.boto3.client.call_args_list] == ["sqs"]
 
 
-def test_secret_failure_is_retryable_and_not_logged(aws, payload, capsys):
-    from botocore.exceptions import ClientError
-    aws.get_secret_value.side_effect = ClientError(
-        {"Error": {"Code": "AccessDeniedException", "Message": SECRET}}, "GetSecretValue"
-    )
+def test_empty_signing_secret_fails_closed(aws, payload, monkeypatch, capsys):
+    monkeypatch.setenv("SLACK_SIGNING_SECRET", "")
     assert app.lambda_handler(request(payload), None)["statusCode"] == 503
-    aws.send_message.assert_not_called()
-    output = capsys.readouterr().out
-    assert SECRET not in output
-    assert json.loads(output)["state"] == "secret_unavailable"
+    assert json.loads(capsys.readouterr().out)["state"] == "invalid_configuration"
+    app.boto3.client.assert_not_called()
 
 
 @pytest.mark.parametrize("level,logged", [("DEBUG", True), ("INFO", True), ("WARN", False), ("ERROR", False)])
@@ -255,7 +244,7 @@ def test_signed_invalid_json(aws):
     aws.send_message.assert_not_called()
 
 
-@pytest.mark.parametrize("field", ["SLACK_TEAM_ID", "SLACK_API_APP_ID", "QUEUE_URL", "SIGNING_SECRET_ARN"])
+@pytest.mark.parametrize("field", ["SLACK_TEAM_ID", "SLACK_API_APP_ID", "QUEUE_URL", "SLACK_SIGNING_SECRET"])
 def test_missing_configuration_fails_closed(aws, payload, monkeypatch, field, capsys):
     monkeypatch.delenv(field)
     assert app.lambda_handler(request(payload), None)["statusCode"] == 503

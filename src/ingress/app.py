@@ -19,7 +19,6 @@ else:
 MAX_MESSAGE_BYTES = 128 * 1024
 
 _clients = {}
-_secret = None
 
 
 def _client(service):
@@ -35,15 +34,11 @@ def _client(service):
     return _clients[service]
 
 
-def _signing_secret(now):
-    global _secret
-    reference = os.environ["SIGNING_SECRET_ARN"]
-    if _secret is None or _secret[0] != reference or now >= _secret[2]:
-        value = _client("secretsmanager").get_secret_value(SecretId=reference).get("SecretString")
-        if not isinstance(value, str) or not value:
-            raise ValueError("Invalid signing secret")
-        _secret = (reference, value, now + 300)
-    return _secret[1]
+def _signing_secret():
+    secret = os.environ["SLACK_SIGNING_SECRET"]
+    if not secret:
+        raise KeyError("Missing signing secret")
+    return secret
 
 
 def _respond(status, state, started, *, body="", level="INFO", **fields):
@@ -76,11 +71,9 @@ def lambda_handler(event, context):
     except (ValueError, TypeError, AttributeError):
         return _respond(400, "invalid_payload", started, level="WARN")
     try:
-        secret = _signing_secret(now)
+        secret = _signing_secret()
     except KeyError:
         return _respond(503, "invalid_configuration", started, level="ERROR")
-    except (BotoCoreError, ClientError, ValueError):
-        return _respond(503, "secret_unavailable", started, level="ERROR")
     if not verify(body, headers, secret, now):
         return _respond(401, "invalid_signature", started, level="WARN")
     try:
