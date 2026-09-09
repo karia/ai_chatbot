@@ -259,6 +259,14 @@ def test_missing_configuration_fails_closed(aws, payload, monkeypatch, field, ca
     assert json.loads(capsys.readouterr().out)["state"] == "invalid_configuration"
 
 
+@pytest.mark.parametrize("field", ["SLACK_TEAM_ID", "SLACK_API_APP_ID"])
+def test_empty_slack_ids_fail_closed(aws, payload, monkeypatch, field, capsys):
+    monkeypatch.setenv(field, "")
+    assert app.lambda_handler(request(payload), None)["statusCode"] == 503
+    aws.send_message.assert_not_called()
+    assert json.loads(capsys.readouterr().out)["state"] == "invalid_configuration"
+
+
 def test_packaged_handler_imports(tmp_path):
     from pathlib import Path
     import shutil
