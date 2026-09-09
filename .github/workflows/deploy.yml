@@ -1,0 +1,76 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        type: choice
+        options: [dev, prod]
+        default: dev
+        required: true
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENV: ${{ inputs.environment || 'dev' }}
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+      TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_bedrock_resource_arns: ${{ vars.BEDROCK_RESOURCE_ARNS || '[]' }}
+      TF_CLI_ARGS_apply: -auto-approve
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: python terraform uv aqua:fujiwara/lambroll aqua:aws/aws-cli
+      - name: Test
+        run: ./run_tests.sh
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-1
+          mask-aws-account-id: true
+      - name: Configure backend
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          bucket = os.environ['TF_VAR_state_bucket']
+          if not bucket:
+              raise SystemExit('TF_STATE_BUCKET is required')
+          env = os.environ['ENV']
+          Path(f'terraform/{env}.tfbackend').write_text(
+              f'bucket = {json.dumps(bucket)}\n'
+              f'key = "ai-chatbot/{env}/terraform.tfstate"\n'
+          )
+          PY
+      - name: Deploy infrastructure
+        run: make deploy-infra
+      - name: Record rollback versions
+        shell: bash
+        run: |
+          export TF_DATA_DIR="$PWD/terraform/.terraform-$ENV"
+          functions=$(terraform -chdir=terraform output -json app_config | python -c 'import json, sys; print("\n".join(config["FunctionName"] for config in json.load(sys.stdin).values()))')
+          while IFS= read -r function; do
+            version=$(aws lambda get-alias --function-name "$function" --name current --query FunctionVersion --output text)
+            printf '%s: %s\n' "$function" "$version" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$functions"
+      - name: Deploy application
+        run: make deploy-app

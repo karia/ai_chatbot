@@ -2,6 +2,7 @@ mock_provider "aws" {}
 mock_provider "archive" {}
 
 variables {
+  state_bucket                   = "test-state"
   environment                    = "dev"
   log_level                      = "DEBUG"
   point_in_time_recovery_enabled = false
