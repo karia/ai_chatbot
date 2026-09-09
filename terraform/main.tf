@@ -21,8 +21,9 @@ provider "aws" {
 }
 
 locals {
-  function_names = ["ingress", "worker"]
-  prefix         = "${var.project_name}-${var.environment}"
+  api_integration_timeout_milliseconds = 5000
+  function_names                       = ["ingress", "worker"]
+  prefix                               = "${var.project_name}-${var.environment}"
 }
 
 resource "aws_bedrockagentcore_memory" "conversation" {

@@ -26,7 +26,7 @@ run "initial_settings" {
       aws_lambda_function.app["ingress"].timeout == 10 &&
       output.app_config.ingress.Timeout == 10 &&
       aws_lambda_function.app["ingress"].timeout * 1000 > aws_apigatewayv2_integration.ingress.timeout_milliseconds &&
-      aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000 &&
+      aws_apigatewayv2_integration.ingress.timeout_milliseconds == local.api_integration_timeout_milliseconds &&
       !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
       aws_lambda_function.app["worker"].timeout == 120 &&
       aws_sqs_queue.events.visibility_timeout_seconds == 720 &&
@@ -82,7 +82,7 @@ run "custom_ingress_timeout" {
     condition = (
       aws_lambda_function.app["ingress"].timeout == 12 &&
       output.app_config.ingress.Timeout == 12 &&
-      aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000
+      aws_apigatewayv2_integration.ingress.timeout_milliseconds == local.api_integration_timeout_milliseconds
     )
     error_message = "Ingress timeout must reach both Terraform and lambroll without changing the API timeout."
   }

@@ -28,8 +28,8 @@ variable "ingress_timeout" {
   type        = number
   default     = 10
   validation {
-    condition     = var.ingress_timeout > 5 && var.ingress_timeout <= 900 && floor(var.ingress_timeout) == var.ingress_timeout
-    error_message = "Ingress timeout must be an integer from 6 to 900 seconds, exceeding the 5-second API integration timeout."
+    condition     = var.ingress_timeout * 1000 > local.api_integration_timeout_milliseconds && var.ingress_timeout <= 900 && floor(var.ingress_timeout) == var.ingress_timeout
+    error_message = "Ingress timeout must be an integer greater than the API integration timeout and no more than 900 seconds."
   }
 }
 
