@@ -1,4 +1,8 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_iam_policy" {
+    defaults = { arn = format("arn:aws:iam::%012d:policy/test-boundary", 0) }
+  }
+}
 mock_provider "archive" {}
 
 variables {
