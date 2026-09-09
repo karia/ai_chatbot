@@ -7,8 +7,7 @@ import yaml
 def test_deployment_is_main_only_and_environment_gated():
     workflow = yaml.safe_load(Path('.github/workflows/deploy.yml').read_text())
     triggers = workflow.get('on', workflow.get(True))
-    assert set(triggers) == {'push', 'workflow_dispatch'}
-    assert triggers['push']['branches'] == ['main']
+    assert set(triggers) == {'workflow_dispatch'}
     assert triggers['workflow_dispatch']['inputs']['environment']['options'] == ['dev', 'prod']
     job = workflow['jobs']['deploy']
     assert "github.ref == 'refs/heads/main'" in job['if']
