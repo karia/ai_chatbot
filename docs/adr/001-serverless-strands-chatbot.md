@@ -233,6 +233,8 @@ FIFOの順序はキューへの投入順であり、Slack側で遅延したイ�
 
 受付Lambdaのタイムアウトは、遅延時にもSQS投入を完了するための実行上限とする。
 Slackへの応答期限は3秒のまま、API Gatewayの統合タイムアウトは5秒とし、受付Lambdaには10秒の実行時間を確保する。
+10秒の実行時間は、3秒以内という応答目標を緩めるものではない。
+60分間の配送試行の95%を超えて失敗するとSlackがイベント購読を一時的に無効化するため、3秒以内の応答率そのものを合格条件とする。[Slack Events API](https://docs.slack.dev/apis/events-api/)
 
 FIFOにはバッチウィンドウを設定しない。
 可視性タイムアウトはLambdaタイムアウトの6倍を初期値とする。[LambdaのSQS設定](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html)
