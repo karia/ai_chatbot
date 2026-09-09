@@ -53,7 +53,7 @@ def normalize(payload, team_id, api_app_id, received_at):
         "api_app_id": app,
         "channel_id": _string(event.get("channel")),
         "user_id": _string(event.get("user")),
-        "thread_ts": _timestamp(event.get("thread_ts", message_ts)),
+        "thread_ts": _timestamp(event.get("thread_ts") or message_ts),
         "message_ts": message_ts,
         "text": text,
         "file_ids": file_ids,

@@ -170,6 +170,13 @@ def test_thread_ordering_and_retries(aws, payload):
     assert aws.send_message.call_args.kwargs["MessageGroupId"] != first["MessageGroupId"]
 
 
+@pytest.mark.parametrize("thread_ts", [None, ""])
+def test_empty_thread_timestamp_uses_message_timestamp(aws, payload, thread_ts):
+    payload["event"]["thread_ts"] = thread_ts
+    assert app.lambda_handler(request(payload), None)["statusCode"] == 200
+    assert json.loads(aws.send_message.call_args.kwargs["MessageBody"])["thread_ts"] == payload["event"]["ts"]
+
+
 def test_message_size_boundary_and_metric(aws, payload, capsys):
     payload["event"]["text"] = ""
     app.lambda_handler(request(payload), None)
