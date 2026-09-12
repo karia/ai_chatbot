@@ -7,7 +7,7 @@ export TF_DATA_DIR := $(CURDIR)/terraform/.terraform-$(ENV)
 build:
 	rm -rf .build
 	mkdir -p .build/ingress .build/worker
-	UV_CACHE_DIR=$(CURDIR)/.cache/uv uv pip install --python-version 3.14 --python-platform aarch64-manylinux2014 --only-binary :all: --target .build/worker -r src/worker/requirements.txt
+	UV_CACHE_DIR=$(CURDIR)/.cache/uv uv pip install --python-version 3.14 --python-platform aarch64-manylinux_2_28 --only-binary :all: --target .build/worker -r src/worker/requirements.txt
 	cp src/ingress/*.py .build/ingress/
 	cp src/worker/*.py .build/worker/
 
