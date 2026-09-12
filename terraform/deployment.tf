@@ -145,7 +145,7 @@ resource "aws_iam_role_policy" "deploy" {
       },
       {
         Effect   = "Allow"
-        Action   = ["lambda:CreateFunction", "lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:DeleteFunction", "lambda:PublishVersion", "lambda:GetAlias", "lambda:CreateAlias", "lambda:UpdateAlias", "lambda:DeleteAlias", "lambda:ListAliases", "lambda:ListVersionsByFunction", "lambda:GetFunctionConcurrency", "lambda:PutFunctionConcurrency", "lambda:DeleteFunctionConcurrency", "lambda:GetPolicy", "lambda:AddPermission", "lambda:RemovePermission", "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource"]
+        Action   = ["lambda:CreateFunction", "lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionCodeSigningConfig", "lambda:GetRuntimeManagementConfig", "lambda:GetFunctionRecursionConfig", "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:DeleteFunction", "lambda:PublishVersion", "lambda:GetAlias", "lambda:CreateAlias", "lambda:UpdateAlias", "lambda:DeleteAlias", "lambda:ListAliases", "lambda:ListVersionsByFunction", "lambda:GetFunctionConcurrency", "lambda:PutFunctionConcurrency", "lambda:DeleteFunctionConcurrency", "lambda:GetPolicy", "lambda:AddPermission", "lambda:RemovePermission", "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource"]
         Resource = local.function_arns
       },
       {
