@@ -185,7 +185,7 @@ resource "aws_iam_role_policy" "deploy" {
       },
       {
         Effect   = "Allow"
-        Action   = ["secretsmanager:DescribeSecret"]
+        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
         Resource = "${format(local.regional_arn, "secretsmanager")}:secret:${local.prefix}/slack-*"
       },
       {
