@@ -33,6 +33,8 @@ jobs:
       TF_INPUT: 'false'
       TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
       TF_VAR_bedrock_resource_arns: ${{ vars.BEDROCK_RESOURCE_ARNS || '[]' }}
+      TF_VAR_slack_team_id: ${{ vars.SLACK_TEAM_ID }}
+      TF_VAR_slack_api_app_id: ${{ vars.SLACK_API_APP_ID }}
       TF_CLI_ARGS_apply: -auto-approve
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -73,4 +75,6 @@ jobs:
             printf '%s: %s\n' "$function" "$version" >> "$GITHUB_STEP_SUMMARY"
           done <<< "$functions"
       - name: Deploy application
+        env:
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: make deploy-app

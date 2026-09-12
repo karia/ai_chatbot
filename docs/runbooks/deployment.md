@@ -52,10 +52,19 @@ Environmentの承認設定はworkflowファイルでは作成されないため�
 | `TF_STATE_BUCKET` | リポジトリ | 既存のstate保存用S3バケット名。両環境で共通 |
 | `AWS_DEPLOY_ROLE_ARN` | 各Environment | その環境のTerraform出力`deploy_role_arn` |
 | `BEDROCK_RESOURCE_ARNS` | 各Environment | 許可するモデル・Inference Profileの具体的なARNを並べたJSON配列。省略時は`[]` |
+| `SLACK_TEAM_ID` | 各Environment | 受付が受理するSlackワークスペースのID |
+| `SLACK_API_APP_ID` | 各Environment | 受付が受理するSlackアプリのID |
 
-追加のGitHub Secretsは不要である。
+必要なGitHub Secretsは次のとおり。
+
+| シークレット | 設定先 | 値の意味 |
+| --- | --- | --- |
+| `SLACK_SIGNING_SECRET` | 各Environment | 受付が署名検証に使うSigning Secret |
+
 AWSの長期アクセスキーは登録しない。
-Slackの秘密値はSecrets Managerに保存し、Lambdaへは参照先だけを渡す。
+ワーカーが使うBot TokenはSecrets Managerに保存し、Lambdaへは参照先だけを渡す。
+受付のSigning Secretだけは、3秒の応答期限から外部呼び出しを外すためLambdaの環境変数へ直接置く。
+`Deploy application`のステップだけに渡し、テスト実行を含む他のステップからは参照できないようにする。
 
 管理者が次のコマンドでリポジトリのOIDC subjectを設定する。
 信頼ポリシーとclaimの順序を一致させるため、キーの順番を保持する。

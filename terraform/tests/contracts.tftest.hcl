@@ -1,8 +1,14 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_iam_policy" {
+    defaults = { arn = format("arn:aws:iam::%012d:policy/test-boundary", 0) }
+  }
+}
 mock_provider "archive" {}
 
 variables {
   state_bucket                   = "test-state"
+  slack_team_id                  = "TTEST"
+  slack_api_app_id               = "ATEST"
   environment                    = "dev"
   log_level                      = "DEBUG"
   point_in_time_recovery_enabled = false
@@ -13,8 +19,14 @@ run "initial_settings" {
 
   assert {
     condition = (
-      aws_lambda_function.app["ingress"].timeout == 3 &&
-      aws_apigatewayv2_integration.ingress.timeout_milliseconds == 5000 &&
+      !contains(keys(output.app_config.ingress.Environment.Variables), "SLACK_SIGNING_SECRET") &&
+      !contains(keys(output.app_config.ingress.Environment.Variables), "SIGNING_SECRET_ARN") &&
+      output.app_config.ingress.Environment.Variables.SLACK_TEAM_ID == "TTEST" &&
+      output.app_config.ingress.Environment.Variables.SLACK_API_APP_ID == "ATEST" &&
+      aws_lambda_function.app["ingress"].timeout == 10 &&
+      output.app_config.ingress.Timeout == 10 &&
+      aws_lambda_function.app["ingress"].timeout * 1000 > aws_apigatewayv2_integration.ingress.timeout_milliseconds &&
+      aws_apigatewayv2_integration.ingress.timeout_milliseconds == local.api_integration_timeout_milliseconds &&
       !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
       aws_lambda_function.app["worker"].timeout == 120 &&
       aws_sqs_queue.events.visibility_timeout_seconds == 720 &&
@@ -55,9 +67,46 @@ run "production_isolation" {
       aws_sqs_queue.events.name == "ai-chatbot-prod-events.fifo" &&
       aws_dynamodb_table.state.name == "ai-chatbot-prod-state" &&
       aws_bedrockagentcore_memory.conversation.name == "ai_chatbot_prod_conversation" &&
-      data.aws_secretsmanager_secret.signing.name == "ai-chatbot-prod/slack-signing-secret" &&
       data.aws_secretsmanager_secret.bot.name == "ai-chatbot-prod/slack-bot-token"
     )
     error_message = "Production resource and secret names must be isolated from development."
+  }
+}
+
+run "custom_ingress_timeout" {
+  command = plan
+  variables {
+    ingress_timeout = 12
+  }
+  assert {
+    condition = (
+      aws_lambda_function.app["ingress"].timeout == 12 &&
+      output.app_config.ingress.Timeout == 12 &&
+      aws_apigatewayv2_integration.ingress.timeout_milliseconds == local.api_integration_timeout_milliseconds
+    )
+    error_message = "Ingress timeout must reach both Terraform and lambroll without changing the API timeout."
+  }
+}
+
+run "reject_short_ingress_timeout" {
+  command = plan
+  variables {
+    ingress_timeout = 5
+  }
+  expect_failures = [var.ingress_timeout]
+}
+
+run "secret_permissions" {
+  command = apply
+  plan_options {
+    target = [aws_iam_role_policy.app]
+  }
+
+  assert {
+    condition = (
+      !strcontains(aws_iam_role_policy.app["ingress"].policy, "secretsmanager:GetSecretValue") &&
+      strcontains(aws_iam_role_policy.app["worker"].policy, "secretsmanager:GetSecretValue")
+    )
+    error_message = "Only the worker may retrieve Secrets Manager values."
   }
 }

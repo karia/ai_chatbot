@@ -21,18 +21,15 @@ provider "aws" {
 }
 
 locals {
-  function_names = ["ingress", "worker"]
-  prefix         = "${var.project_name}-${var.environment}"
+  api_integration_timeout_milliseconds = 5000
+  function_names                       = ["ingress", "worker"]
+  prefix                               = "${var.project_name}-${var.environment}"
 }
 
 resource "aws_bedrockagentcore_memory" "conversation" {
   name                  = "${replace(local.prefix, "-", "_")}_conversation"
   event_expiry_duration = 30
   tags                  = { ProjectEnvironment = local.prefix }
-}
-
-data "aws_secretsmanager_secret" "signing" {
-  name = "${local.prefix}/slack-signing-secret"
 }
 
 data "aws_secretsmanager_secret" "bot" {

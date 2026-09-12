@@ -24,9 +24,11 @@ mock_provider "archive" {
 }
 
 variables {
-  environment  = "dev"
-  log_level    = "DEBUG"
-  state_bucket = "test-state"
+  environment      = "dev"
+  log_level        = "DEBUG"
+  state_bucket     = "test-state"
+  slack_team_id    = "TTEST"
+  slack_api_app_id = "ATEST"
 }
 
 run "deployment_contract" {

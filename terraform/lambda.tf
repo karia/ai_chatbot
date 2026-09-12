@@ -22,7 +22,7 @@ resource "aws_lambda_function" "app" {
   runtime                        = "python3.14"
   handler                        = "app.lambda_handler"
   architectures                  = ["arm64"]
-  timeout                        = each.key == "worker" ? var.worker_timeout : 3
+  timeout                        = each.key == "worker" ? var.worker_timeout : var.ingress_timeout
   reserved_concurrent_executions = each.key == "worker" ? var.worker_concurrency : -1
   depends_on                     = [aws_iam_role_policy.app, aws_cloudwatch_log_group.lambda]
   lifecycle {

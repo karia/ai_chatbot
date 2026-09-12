@@ -23,6 +23,16 @@ variable "log_level" {
   }
 }
 
+variable "ingress_timeout" {
+  description = "Execution ceiling in seconds for completing delayed SQS delivery, independent of Slack's acknowledgement deadline. Must exceed the API integration timeout."
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.ingress_timeout * 1000 > local.api_integration_timeout_milliseconds && var.ingress_timeout <= 900 && floor(var.ingress_timeout) == var.ingress_timeout
+    error_message = "Ingress timeout must be an integer greater than the API integration timeout and no more than 900 seconds."
+  }
+}
+
 variable "worker_timeout" {
   type    = number
   default = 120
@@ -64,4 +74,22 @@ variable "bedrock_resource_arns" {
 variable "point_in_time_recovery_enabled" {
   type    = bool
   default = true
+}
+
+variable "slack_team_id" {
+  description = "Slack workspace allowed to submit events. Supply per environment."
+  type        = string
+  validation {
+    condition     = can(regex("^T[A-Z0-9]+$", var.slack_team_id))
+    error_message = "Supply a Slack workspace ID."
+  }
+}
+
+variable "slack_api_app_id" {
+  description = "Slack app allowed to submit events. Supply per environment."
+  type        = string
+  validation {
+    condition     = can(regex("^A[A-Z0-9]+$", var.slack_api_app_id))
+    error_message = "Supply a Slack app ID."
+  }
 }
