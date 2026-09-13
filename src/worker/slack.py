@@ -110,6 +110,9 @@ class SlackReplyAdapter:
         raise AssertionError("Slack retry loop exhausted")
 
     def send(self, event, team, channel, thread_ts, context):
+        if not event["reply"].strip():
+            self.event = self.store.needs_review(event, "slack_empty_reply")
+            raise PermanentSlackError("Slack reply is empty")
         splits = list(range(MESSAGE_LIMIT, len(event["reply"]), MESSAGE_LIMIT)) + [
             len(event["reply"])
         ]

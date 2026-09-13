@@ -83,6 +83,21 @@ def slack_error(status, retry_after=None):
     return SlackApiError("Slack rejected the request", Response(status, retry_after))
 
 
+@pytest.mark.parametrize("reply", ["", " \n\t"])
+def test_empty_reply_is_isolated_without_calling_slack(reply):
+    store = Store()
+    client = Client()
+
+    with pytest.raises(PermanentSlackError):
+        SlackReplyAdapter(store=store, client=client).send(
+            event(reply), "T", "C", "root", Context(10_000)
+        )
+
+    assert store.event["status"] == "NEEDS_REVIEW"
+    assert store.event["failure"] == "slack_empty_reply"
+    assert client.calls == []
+
+
 def test_post_disconnect_is_not_reposted_and_is_isolated_on_resume():
     store = Store()
     client = Client({"ts": "1.0"}, SlackRequestError("response lost"))
