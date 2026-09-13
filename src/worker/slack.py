@@ -70,11 +70,10 @@ class SlackReplyAdapter:
             **fields,
         )
 
-    def _call(self, operation, event, context, **kwargs):
-        call = getattr(self.client, operation)
+    def _call(self, event, context, **kwargs):
         for attempt in range(2):
             try:
-                return call(**kwargs)
+                return self.client.chat_postMessage(**kwargs)
             except SlackApiError as error:
                 status = error.response.status_code
                 if status == 429:
@@ -126,21 +125,11 @@ class SlackReplyAdapter:
             text = event["reply"][start:end]
             start = end
             if "ts" in part:
-                self._log_text("slack_update", text, part=index)
-                self._call(
-                    "chat_update",
-                    event,
-                    context,
-                    channel=channel,
-                    ts=part["ts"],
-                    text=text,
-                )
                 continue
             event = self.store.start_post(event, index, team, channel)
             self.event = event
             self._log_text("slack_post", text, part=index)
             response = self._call(
-                "chat_postMessage",
                 event,
                 context,
                 channel=channel,

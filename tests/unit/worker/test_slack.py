@@ -110,15 +110,16 @@ def test_post_disconnect_is_not_reposted_and_is_isolated_on_resume():
     assert sleeps == [1]
 
 
-def test_resume_updates_known_posts_and_only_posts_missing_parts():
+def test_resume_skips_multiple_known_posts_and_only_posts_missing_parts():
     store = Store()
-    client = Client({}, {"ts": "2.0"})
+    client = Client({"ts": "3.0"})
     interrupted = event(
-        "abcdefgh",
+        "abcdefghijkl",
         status="POSTING",
         slack_parts=[
             {"end": Decimal("4"), "ts": "1.0"},
-            {"end": Decimal("8")},
+            {"end": Decimal("8"), "ts": "2.0"},
+            {"end": Decimal("12")},
         ],
     )
 
@@ -127,10 +128,9 @@ def test_resume_updates_known_posts_and_only_posts_missing_parts():
     )
 
     assert client.calls == [
-        ("update", {"channel": "C", "ts": "1.0", "text": "abcd"}),
-        ("post", {"channel": "C", "thread_ts": "root", "text": "efgh"}),
+        ("post", {"channel": "C", "thread_ts": "root", "text": "ijkl"})
     ]
-    assert store.event["slack_ts"] == "2.0"
+    assert store.event["slack_ts"] == "3.0"
 
 
 def test_429_waits_and_retries_once_when_time_remains():
