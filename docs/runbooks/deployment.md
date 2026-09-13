@@ -1,9 +1,7 @@
 # デプロイと切り戻し
 
-実行はActionsのDeployから`main`と`dev`または`prod`を選ぶ手動起動に限る。
-mainへのpushによる自動デプロイは、下記の初回設定が済むまで無効にしてある。
-OIDC providerとデプロイロール、およびActions変数とシークレットが揃う前に発火すると、認証情報の設定で必ず失敗するためである。
-初回設定を終えたら`.github/workflows/deploy.yml`のトリガーに`push`を戻し、`tests/test_deploy_workflow.py`のアサーションも合わせて更新する。
+mainへのpushでdevへ自動デプロイする。
+手動実行はActionsのDeployから`main`と`dev`または`prod`を選ぶ。
 prodはGitHub Environmentの承認後に適用する。
 Terraformがインフラを管理し、lambrollがLambdaの公開バージョンと`current`エイリアスを更新する。
 
