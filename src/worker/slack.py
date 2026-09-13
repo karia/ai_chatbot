@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import os
 import time
 
@@ -14,6 +15,7 @@ from worker.store import Store
 
 MESSAGE_LIMIT = 40_000
 LOG_FIELD_LIMIT = 1_000
+DEFAULT_RETRY_AFTER = 3
 
 
 class RetryableSlackError(Exception):
@@ -43,6 +45,17 @@ def _log(level, operation, **fields):
             ),
             flush=True,
         )
+
+
+def _retry_after(headers):
+    value = {key.lower(): value for key, value in headers.items()}.get(
+        "retry-after", DEFAULT_RETRY_AFTER
+    )
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_RETRY_AFTER
+    return seconds if math.isfinite(seconds) and seconds >= 0 else DEFAULT_RETRY_AFTER
 
 
 class SlackReplyAdapter:
@@ -77,12 +90,7 @@ class SlackReplyAdapter:
             except SlackApiError as error:
                 status = error.response.status_code
                 if status == 429:
-                    retry_after = float(
-                        {
-                            key.lower(): value
-                            for key, value in error.response.headers.items()
-                        }["retry-after"]
-                    )
+                    retry_after = _retry_after(error.response.headers)
                     if (
                         attempt == 0
                         and retry_after * 1_000

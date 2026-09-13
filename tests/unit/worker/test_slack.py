@@ -175,6 +175,20 @@ def test_429_defers_without_waiting_when_time_is_insufficient():
     assert len(client.calls) == 1
 
 
+@pytest.mark.parametrize("retry_after", [None, "invalid"])
+def test_429_invalid_retry_after_uses_default_delay(retry_after):
+    store = Store()
+    client = Client(slack_error(429, retry_after))
+
+    with pytest.raises(RetryableSlackError):
+        SlackReplyAdapter(store=store, client=client, now=lambda: 100).send(
+            event(), "T", "C", "root", Context(0)
+        )
+
+    assert store.event["status"] == "GENERATED"
+    assert store.event["retry_at"] == 103
+
+
 def test_5xx_is_retryable_without_repost_and_non_429_4xx_is_permanent():
     store = Store()
     adapter = SlackReplyAdapter(
