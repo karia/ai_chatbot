@@ -358,3 +358,51 @@ def test_session_update_times_preserve_fractional_seconds(state):
     now[0] = 1000.75
     store.complete(event, "123.456")
     assert store.get_session("thread")["updated_at"] == Decimal("1000.75")
+
+
+def test_split_posts_are_reserved_and_saved_in_order(state):
+    store, table, now = state
+    event = store.generated(acquire(store), "abcdefgh")
+    event = store.prepare_posts(event, [4, 8])
+    event = store.start_post(event, 0, "T", "C")
+    assert event["posting_part"] == 0
+    assert table.get_item(Key={"pk": "RATE#T#C"})["Item"]["next_post_at"] == 1001
+    other = store.acquire("T", "other", "other-thread", "one", received_at=1000)
+    other = store.prepare_posts(store.generated(other, "x"), [1])
+    with pytest.raises(Conflict):
+        store.start_post(other, 0, "T", "C")
+    event = store.posted(event, 0, "1.0")
+    assert event["slack_parts"] == [{"end": 4, "ts": "1.0"}, {"end": 8}]
+    assert "posting_part" not in event
+    now[0] = 1001
+    event = store.start_post(event, 1, "T", "C")
+    event = store.posted(event, 1, "2.0")
+    store.complete(event, "2.0")
+    assert store.get_event("T", "E")["slack_parts"][-1]["ts"] == "2.0"
+
+
+def test_split_post_state_rejects_skips_and_can_defer_a_definite_rejection(state):
+    store, table, now = state
+    event = store.prepare_posts(store.generated(acquire(store), "abcdefgh"), [4, 8])
+    with pytest.raises(Conflict):
+        store.start_post(event, 1, "T", "C")
+    event = store.start_post(event, 0, "T", "C")
+    with pytest.raises(Conflict):
+        store.start_post(event, 0, "T", "other")
+    deferred = store.defer_post(event, 1200)
+    assert deferred["status"] == "GENERATED"
+    assert deferred["retry_at"] == 1200
+    assert "posting_part" not in deferred
+    now[0] = 1200
+    resumed = acquire(store, owner="two")
+    assert resumed["slack_parts"] == [{"end": 4}, {"end": 8}]
+
+
+def test_split_plan_cannot_change_after_posting_starts(state):
+    store, table, now = state
+    event = store.prepare_posts(store.generated(acquire(store), "abcdefgh"), [4, 8])
+    event = store.defer_post(store.start_post(event, 0, "T", "C"), 1180)
+    now[0] = 1180
+    event = acquire(store, owner="two")
+    with pytest.raises(Conflict):
+        store.prepare_posts(event, [8])
