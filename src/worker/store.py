@@ -228,16 +228,11 @@ class Store:
         )
         if index != pending:
             raise Conflict("Slack posts must be saved in order")
-        now = _now()
-        rate_pk = f"RATE#{team}#{channel}"
-        previous_rate = self._get(rate_pk)
-        if previous_rate and previous_rate["next_post_at"] > now:
-            raise Conflict("Posting slot is unavailable")
         updated_event = {**event, "posting_part": index}
-        rate = {"pk": rate_pk, "next_post_at": now + 1}
+        rate_write, _ = self._post_slot(team, channel)
         return self._write(
             self._put(updated_event, event, owned=True),
-            self._put(rate, previous_rate),
+            rate_write,
         )
 
     def posted(self, event, index, slack_ts):
@@ -272,13 +267,17 @@ class Store:
             event, "NEEDS_REVIEW", {"RUNNING", "GENERATED", "POSTING"}, failure=failure
         )
 
-    def reserve_post(self, team, channel):
-        """Reserve one second immediately; a conflict must be retried later."""
+    def _post_slot(self, team, channel):
         now = _now()
         pk = f"RATE#{team}#{channel}"
         previous = self._get(pk)
         if previous and previous["next_post_at"] > now:
             raise Conflict("Posting slot is unavailable")
-        item = {"pk": pk, "next_post_at": now + 1}
-        self._write(self._put(item, previous))
-        return item["next_post_at"]
+        next_post_at = now + 1
+        return self._put({"pk": pk, "next_post_at": next_post_at}, previous), next_post_at
+
+    def reserve_post(self, team, channel):
+        """Reserve one second immediately; a conflict must be retried later."""
+        write, next_post_at = self._post_slot(team, channel)
+        self._write(write)
+        return next_post_at
