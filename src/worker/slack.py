@@ -10,7 +10,10 @@ import boto3
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError, SlackRequestError
 
-from worker.store import Store
+if __package__:
+    from .store import Store
+else:
+    from store import Store
 
 
 MESSAGE_LIMIT = 40_000
