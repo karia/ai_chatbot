@@ -204,6 +204,59 @@ class Store:
     def posting(self, event):
         return self._transition(event, "POSTING", {"GENERATED"})
 
+    def prepare_posts(self, event, splits):
+        if not splits or splits[-1] != len(event["reply"]) or any(
+            left >= right for left, right in zip((0, *splits), splits)
+        ):
+            raise ValueError("Invalid Slack message splits")
+        parts = event.get("slack_parts")
+        if parts and [part["end"] for part in parts] != splits:
+            raise Conflict("Slack message splits changed")
+        return self._transition(
+            event,
+            "POSTING",
+            {"GENERATED"},
+            slack_parts=parts or [{"end": end} for end in splits],
+        )
+
+    def start_post(self, event, index, team, channel):
+        if event["status"] != "POSTING" or "posting_part" in event:
+            raise Conflict("A Slack post is already in progress")
+        pending = next(
+            (number for number, part in enumerate(event["slack_parts"]) if "ts" not in part),
+            None,
+        )
+        if index != pending:
+            raise Conflict("Slack posts must be saved in order")
+        updated_event = {**event, "posting_part": index}
+        rate_write, _ = self._post_slot(team, channel)
+        return self._write(
+            self._put(updated_event, event, owned=True),
+            rate_write,
+        )
+
+    def posted(self, event, index, slack_ts):
+        if not slack_ts or event.get("posting_part") != index:
+            raise Conflict("Slack post does not match the reservation")
+        parts = [dict(part) for part in event["slack_parts"]]
+        if "ts" in parts[index]:
+            raise Conflict("Slack post was already saved")
+        parts[index]["ts"] = slack_ts
+        item = {**event, "slack_parts": parts}
+        del item["posting_part"]
+        return self._write(self._put(item, event, owned=True))
+
+    def defer_post(self, event, retry_at):
+        if event["status"] != "POSTING":
+            raise Conflict("Slack posting is not active")
+        item = {
+            **event,
+            "status": "GENERATED",
+            "retry_at": Decimal(str(retry_at)),
+        }
+        item.pop("posting_part", None)
+        return self._write(self._put(item, event, owned=True))
+
     def complete(self, event, slack_ts):
         return self._transition(event, "COMPLETED", {"POSTING"}, slack_ts=slack_ts)
 
@@ -214,13 +267,17 @@ class Store:
             event, "NEEDS_REVIEW", {"RUNNING", "GENERATED", "POSTING"}, failure=failure
         )
 
-    def reserve_post(self, team, channel):
-        """Reserve one second immediately; a conflict must be retried later."""
+    def _post_slot(self, team, channel):
         now = _now()
         pk = f"RATE#{team}#{channel}"
         previous = self._get(pk)
         if previous and previous["next_post_at"] > now:
             raise Conflict("Posting slot is unavailable")
-        item = {"pk": pk, "next_post_at": now + 1}
-        self._write(self._put(item, previous))
-        return item["next_post_at"]
+        next_post_at = now + 1
+        return self._put({"pk": pk, "next_post_at": next_post_at}, previous), next_post_at
+
+    def reserve_post(self, team, channel):
+        """Reserve one second immediately; a conflict must be retried later."""
+        write, next_post_at = self._post_slot(team, channel)
+        self._write(write)
+        return next_post_at
