@@ -10,6 +10,9 @@ build:
 	UV_CACHE_DIR=$(CURDIR)/.cache/uv uv pip install --python-version 3.14 --python-platform aarch64-manylinux_2_28 --only-binary :all: --target .build/worker -r src/worker/requirements.txt
 	cp src/ingress/*.py .build/ingress/
 	cp src/worker/*.py .build/worker/
+	@status=0; for module in .build/ingress/*.py .build/worker/*.py; do \
+	  if [ -d "$${module%.py}" ]; then echo "Module $$module collides with a bundled package" >&2; status=1; fi; \
+	done; exit $$status
 
 init-infra:
 	test -f terraform/$(ENV).tfvars || { echo "Missing file: terraform/$(ENV).tfvars" >&2; exit 1; }
