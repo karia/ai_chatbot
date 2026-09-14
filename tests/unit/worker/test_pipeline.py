@@ -4,7 +4,7 @@ import pytest
 
 from ingress.events import normalize
 from worker import app, pipeline
-from worker.pipeline import FIXED_REPLY, InvalidMessage, process, validate
+from worker.pipeline import FIXED_REPLY, MESSAGE_FIELDS, InvalidMessage, process, validate
 from worker.slack import PermanentSlackError, RetryableSlackError
 from worker.store import Conflict, EventExpired
 
@@ -104,6 +104,7 @@ def test_ingress_output_matches_worker_contract(message):
         payload, message["team_id"], message["api_app_id"], message["received_at"]
     )
 
+    assert set(ingress_message) == MESSAGE_FIELDS
     assert process(sqs(ingress_message), Context(), Store(), Adapter()) == "completed"
 
 
@@ -112,7 +113,6 @@ def test_ingress_output_matches_worker_contract(message):
     [
         lambda value: value.pop("event_id"),
         lambda value: value.update(schema_version=2),
-        lambda value: value.update(extra="field"),
         lambda value: value.update(thread_ts=1.0),
         lambda value: value.update(message_ts="invalid"),
         lambda value: value.update(file_ids=[""]),
@@ -127,6 +127,12 @@ def test_invalid_messages_are_isolated_without_retry(message, change):
     assert process(sqs(message), Context(), store, adapter) == "isolated"
     assert store.calls == []
     assert adapter.calls == []
+
+
+def test_unknown_message_fields_are_ignored(message):
+    message["future_field"] = {"nested": "value"}
+
+    assert process(sqs(message), Context(), Store(), Adapter()) == "completed"
 
 
 @pytest.mark.parametrize(

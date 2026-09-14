@@ -76,7 +76,7 @@ def validate(event):
         if not isinstance(body, str) or len(body.encode("utf-8")) > MAX_MESSAGE_BYTES:
             raise InvalidMessage("Invalid SQS body")
         message = json.loads(body)
-        if not isinstance(message, dict) or set(message) != MESSAGE_FIELDS:
+        if not isinstance(message, dict) or not MESSAGE_FIELDS <= message.keys():
             raise InvalidMessage("Invalid message fields")
         if type(message["schema_version"]) is not int or message["schema_version"] != 1:
             raise InvalidMessage("Invalid schema version")
