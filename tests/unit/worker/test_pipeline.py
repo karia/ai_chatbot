@@ -277,6 +277,29 @@ def test_permanent_delivery_failure_is_acknowledged_after_isolation(message):
     assert adapter.event["status"] == "NEEDS_REVIEW"
 
 
+@pytest.mark.parametrize(
+    "store,adapter,final_state",
+    [
+        (Store(error=EventExpired()), Adapter(), "event_expired"),
+        (
+            Store(),
+            Adapter(PermanentSlackError("rejected")),
+            "delivery_isolated",
+        ),
+    ],
+)
+def test_expected_isolation_has_one_result_log(
+    message, capsys, store, adapter, final_state
+):
+    assert process(sqs(message), Context(), store, adapter) == "isolated"
+
+    states = [
+        json.loads(line)["state"] for line in capsys.readouterr().out.splitlines()
+    ]
+    assert "stage_failed" not in states
+    assert states.count(final_state) == 1
+
+
 def test_low_budget_after_acquire_stops_before_next_stage(message):
     context = Context()
     store = Store(context=context)

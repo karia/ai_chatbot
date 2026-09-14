@@ -119,6 +119,8 @@ def _stage(name, event_id, context, operation):
     started = time.monotonic()
     try:
         result = operation()
+    except (EventExpired, PermanentSlackError):
+        raise
     except Exception as error:
         _log(
             logging.WARNING,
