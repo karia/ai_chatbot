@@ -12,7 +12,7 @@ from worker.pipeline import (
     process,
     validate,
 )
-from worker.slack import PermanentSlackError, RetryableSlackError
+from worker.slack_reply import PermanentSlackError, RetryableSlackError
 from worker.store import Conflict, EventExpired, SessionBusy, SessionStopped
 
 
