@@ -4,7 +4,14 @@ import pytest
 
 from ingress.events import normalize
 from worker import app, pipeline
-from worker.pipeline import FIXED_REPLY, MESSAGE_FIELDS, InvalidMessage, process, validate
+from worker.pipeline import (
+    FIXED_REPLY,
+    MAX_MESSAGE_BYTES,
+    MESSAGE_FIELDS,
+    InvalidMessage,
+    process,
+    validate,
+)
 from worker.slack import PermanentSlackError, RetryableSlackError
 from worker.store import Conflict, EventExpired
 
@@ -115,7 +122,9 @@ def test_ingress_output_matches_worker_contract(message):
         lambda value: value.update(schema_version=2),
         lambda value: value.update(thread_ts=1.0),
         lambda value: value.update(message_ts="invalid"),
+        lambda value: value.update(text=None),
         lambda value: value.update(file_ids=[""]),
+        lambda value: value.update(file_ids={}),
         lambda value: value.update(received_at=True),
     ],
 )
@@ -139,6 +148,8 @@ def test_unknown_message_fields_are_ignored(message):
     "event",
     [
         {"Records": []},
+        {"Records": [{"body": 1}]},
+        {"Records": [{"body": "x" * (MAX_MESSAGE_BYTES + 1)}]},
         {"Records": [{"body": "\ud800"}]},
         {"Records": [{"body": "[" * 10_000 + "]" * 10_000}]},
     ],
@@ -234,6 +245,22 @@ def test_interrupted_execution_is_isolated_without_posting(message):
 
     assert [call[0] for call in store.calls] == ["acquire", "needs_review"]
     assert store.calls[-1][1] == "execution_unknown"
+    assert adapter.calls == []
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        {"status": "RUNNING", "phase": "UNKNOWN"},
+        {"status": "UNKNOWN"},
+    ],
+)
+def test_unknown_persisted_state_is_retried_without_posting(message, saved):
+    adapter = Adapter()
+
+    with pytest.raises(Conflict):
+        process(sqs(message), Context(), Store(saved), adapter)
+
     assert adapter.calls == []
 
 
