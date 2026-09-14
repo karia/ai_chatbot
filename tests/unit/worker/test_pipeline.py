@@ -13,7 +13,7 @@ from worker.pipeline import (
     validate,
 )
 from worker.slack import PermanentSlackError, RetryableSlackError
-from worker.store import Conflict, EventExpired
+from worker.store import Conflict, EventExpired, SessionBusy, SessionStopped
 
 
 class Context:
@@ -198,15 +198,34 @@ def test_expired_event_is_isolated_without_posting(message):
     assert adapter.calls == []
 
 
-def test_stopped_session_fails_without_external_call(message):
+def test_stopped_session_is_logged_as_error_and_retried_without_external_call(
+    message, capsys
+):
     adapter = Adapter()
 
-    with pytest.raises(Conflict):
-        process(
-            sqs(message), Context(), Store(error=Conflict("Session is unavailable")), adapter
-        )
+    with pytest.raises(SessionStopped):
+        process(sqs(message), Context(), Store(error=SessionStopped()), adapter)
 
     assert adapter.calls == []
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[-1]["state"] == "session_stopped"
+    assert records[-1]["level"] == "ERROR"
+    assert all(record["state"] != "stage_failed" for record in records)
+
+
+def test_busy_session_is_logged_as_warning_and_retried_without_external_call(
+    message, capsys
+):
+    adapter = Adapter()
+
+    with pytest.raises(SessionBusy):
+        process(sqs(message), Context(), Store(error=SessionBusy()), adapter)
+
+    assert adapter.calls == []
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[-1]["state"] == "session_busy"
+    assert records[-1]["level"] == "WARNING"
+    assert all(record["state"] != "stage_failed" for record in records)
 
 
 @pytest.mark.parametrize(

@@ -7,10 +7,10 @@ import time
 
 if __package__:
     from .slack import PermanentSlackError, SlackReplyAdapter
-    from .store import Conflict, EventExpired, Store
+    from .store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 else:
     from slack import PermanentSlackError, SlackReplyAdapter
-    from store import Conflict, EventExpired, Store
+    from store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 
 
 FIXED_REPLY = "（応答生成は準備中です）"
@@ -119,7 +119,7 @@ def _stage(name, event_id, context, operation):
     started = time.monotonic()
     try:
         result = operation()
-    except (EventExpired, PermanentSlackError):
+    except (EventExpired, PermanentSlackError, SessionBusy, SessionStopped):
         raise
     except Exception as error:
         _log(
@@ -177,6 +177,12 @@ def process(event, context, store=None, adapter=None):
                 received_at=message["received_at"],
             ),
         )
+    except SessionStopped:
+        _log(logging.ERROR, "session_stopped", event_id)
+        raise
+    except SessionBusy:
+        _log(logging.WARNING, "session_busy", event_id)
+        raise
     except EventExpired:
         _log(logging.ERROR, "event_expired", event_id)
         return "isolated"

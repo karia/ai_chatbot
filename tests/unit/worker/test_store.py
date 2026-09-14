@@ -2,7 +2,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from worker.store import Conflict, EventExpired, Store
+from worker.store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 
 
 @pytest.fixture
@@ -42,6 +42,18 @@ def test_acquire_is_atomic_and_excludes_competitors(state):
     with pytest.raises(Conflict):
         store.generated(first, "stale")
     assert store.get_event("T", "E")["owner"] == "two"
+
+
+def test_acquire_distinguishes_busy_and_stopped_sessions(state):
+    store, table, now = state
+    event = acquire(store)
+
+    with pytest.raises(SessionBusy):
+        acquire(store, event="other")
+
+    store.needs_review(event, "manual_review")
+    with pytest.raises(SessionStopped):
+        acquire(store, event="later")
 
 
 def test_completion_and_redelivery_count_once(state):
