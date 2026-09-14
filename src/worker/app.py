@@ -1,2 +1,8 @@
+if __package__:
+    from .pipeline import process
+else:
+    from pipeline import process
+
+
 def lambda_handler(event, context):
-    raise RuntimeError("Worker not implemented; retain the message for retry")
+    process(event, context)

@@ -20,6 +20,14 @@ class Conflict(Exception):
     """State changed, a lease is unavailable, or the session is stopped; retry."""
 
 
+class SessionBusy(Conflict):
+    """Another event owns the session; retry after it completes."""
+
+
+class SessionStopped(Conflict):
+    """The session requires human intervention; preserve the event for redrive."""
+
+
 class EventExpired(Exception):
     """The event is outside the retention window; do not execute it."""
 
@@ -131,11 +139,11 @@ class Store:
             ) > now:
                 raise Conflict("Event is unavailable")
         session = self.get_session(thread_hash)
-        if session and (
-            session.get("stop_reason")
-            or session.get("active_event_id") not in (None, pk)
-        ):
-            raise Conflict("Session is unavailable")
+        if session:
+            if session.get("stop_reason"):
+                raise SessionStopped("Session is stopped")
+            if session.get("active_event_id") not in (None, pk):
+                raise SessionBusy("Session is busy")
         updated_session = {
             **(session or {"pk": f"SESSION#{thread_hash}", "answer_count": 0}),
             "active_event_id": pk,
