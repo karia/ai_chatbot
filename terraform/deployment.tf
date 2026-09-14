@@ -215,5 +215,6 @@ resource "aws_iam_role_policy" "deploy" {
 }
 
 output "deploy_role_arn" {
-  value = aws_iam_role.deploy.arn
+  value     = aws_iam_role.deploy.arn
+  sensitive = true
 }
