@@ -25,7 +25,7 @@ devのstateがアカウント共通のGitHub OIDC providerを所有し、各環�
 初回適用はdev、prodの順に行う。
 OIDC providerには削除保護があり、dev全体の`terraform destroy`も拒否する。
 
-各環境のロールARNを取得し、次節のGitHub変数へ設定する。
+各環境のロールARNを取得し、次節のGitHub Secretsへ設定する。
 
 ```sh
 TF_DATA_DIR="$PWD/terraform/.terraform-dev" mise exec -- terraform -chdir=terraform output -raw deploy_role_arn
@@ -49,17 +49,19 @@ Environmentの承認設定はworkflowファイルでは作成されないため�
 
 | 変数 | 設定先 | 値の意味 |
 | --- | --- | --- |
-| `TF_STATE_BUCKET` | リポジトリ | 既存のstate保存用S3バケット名。両環境で共通 |
-| `AWS_DEPLOY_ROLE_ARN` | 各Environment | その環境のTerraform出力`deploy_role_arn` |
 | `BEDROCK_RESOURCE_ARNS` | 各Environment | 許可するモデル・Inference Profileの具体的なARNを並べたJSON配列。省略時は`[]` |
-| `SLACK_TEAM_ID` | 各Environment | 受付が受理するSlackワークスペースのID |
-| `SLACK_API_APP_ID` | 各Environment | 受付が受理するSlackアプリのID |
 
 必要なGitHub Secretsは次のとおり。
 
 | シークレット | 設定先 | 値の意味 |
 | --- | --- | --- |
+| `TF_STATE_BUCKET` | リポジトリ | 既存のstate保存用S3バケット名。両環境で共通 |
+| `AWS_DEPLOY_ROLE_ARN` | 各Environment | その環境のTerraform出力`deploy_role_arn` |
+| `SLACK_TEAM_ID` | 各Environment | 受付が受理するSlackワークスペースのID |
+| `SLACK_API_APP_ID` | 各Environment | 受付が受理するSlackアプリのID |
 | `SLACK_SIGNING_SECRET` | 各Environment | 受付が署名検証に使うSigning Secret |
+
+4つの識別子は資格情報ではないが、公開しない方針のためGitHub Secretsに置き、公開ログではGitHub Actionsの自動マスクを適用する。
 
 AWSの長期アクセスキーは登録しない。
 ワーカーが使うBot TokenはSecrets Managerに保存し、Lambdaへは参照先だけを渡す。
