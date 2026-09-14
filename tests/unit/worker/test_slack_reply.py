@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from slack_sdk.errors import SlackApiError, SlackRequestError
 
-from worker.slack import (
+from worker.slack_reply import (
     PermanentSlackError,
     RetryableSlackError,
     SlackReplyAdapter,
@@ -236,9 +236,9 @@ def test_secret_token_client_has_no_automatic_retry(monkeypatch):
             return {"SecretString": "xoxb-secret"}
 
     monkeypatch.setenv("BOT_TOKEN_SECRET_ARN", "secret-arn")
-    monkeypatch.setattr("worker.slack.boto3.client", lambda service: Secrets())
+    monkeypatch.setattr("worker.slack_reply.boto3.client", lambda service: Secrets())
     monkeypatch.setattr(
-        "worker.slack.WebClient", lambda **kwargs: created.update(kwargs) or Client()
+        "worker.slack_reply.WebClient", lambda **kwargs: created.update(kwargs) or Client()
     )
 
     SlackReplyAdapter(store=Store())

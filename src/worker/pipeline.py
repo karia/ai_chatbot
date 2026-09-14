@@ -6,10 +6,10 @@ import re
 import time
 
 if __package__:
-    from .slack import PermanentSlackError, SlackReplyAdapter
+    from .slack_reply import PermanentSlackError, SlackReplyAdapter
     from .store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 else:
-    from slack import PermanentSlackError, SlackReplyAdapter
+    from slack_reply import PermanentSlackError, SlackReplyAdapter
     from store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 
 
