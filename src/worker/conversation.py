@@ -228,7 +228,7 @@ def generate(message):
         if not _saved_turn(events, message["event_id"], prompt, assistant_messages):
             raise MemoryUnconfirmed("Memory did not confirm the conversation turn")
         metrics = result.metrics if result is not None else agent.event_loop_metrics
-        invocation = metrics.latest_agent_invocation if hasattr(metrics, "latest_agent_invocation") else metrics
+        invocation = metrics.latest_agent_invocation
         _record(
             logging.INFO, operation="generated", event_id=message["event_id"],
             duration_ms=round((time.monotonic() - started) * 1000, 3),

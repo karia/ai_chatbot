@@ -238,7 +238,8 @@ def test_generate_confirms_memory_save_and_uses_budgets(monkeypatch, model_id):
                 stop_reason="end_turn",
                 message={"content": [{"text": "answer"}]},
                 metrics=SimpleNamespace(
-                    cycles=[1], usage={"outputTokens": 20}, tool_metrics={}
+                    latest_agent_invocation=SimpleNamespace(cycles=[1], usage={"outputTokens": 20}),
+                    tool_metrics={}
                 ),
             )
 
@@ -307,7 +308,7 @@ def test_limit_stop_returns_partial_text_and_notice_after_memory_confirmation(mo
     monkeypatch.setattr(conversation, "BedrockModel", lambda **kwargs: kwargs)
     monkeypatch.setattr(conversation, "Agent", lambda **kwargs: MockAgent(SimpleNamespace(
         stop_reason=reason, message={"content": [{"text": text}]},
-        metrics=SimpleNamespace(cycles=[], usage={}, tool_metrics={}),
+        metrics=SimpleNamespace(latest_agent_invocation=SimpleNamespace(cycles=[], usage={}), tool_metrics={}),
     )))
 
     expected = f"{text}\n\n{conversation.LIMIT_STOP_NOTICE}" if text else conversation.LIMIT_STOP_NOTICE
