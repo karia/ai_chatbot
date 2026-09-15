@@ -1,8 +1,10 @@
 output "slack_events_url" {
-  value = "${aws_apigatewayv2_api.slack.api_endpoint}/slack/events"
+  value     = "${aws_apigatewayv2_api.slack.api_endpoint}/slack/events"
+  sensitive = true
 }
 
 output "app_config" {
+  sensitive = true
   value = {
     for name, fn in aws_lambda_function.app : name => {
       FunctionName = fn.function_name
