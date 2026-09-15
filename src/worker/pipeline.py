@@ -6,16 +6,18 @@ import re
 import time
 
 if __package__:
+    from .conversation import MAX_ANSWERS_PER_THREAD, generate
     from .slack_reply import PermanentSlackError, SlackReplyAdapter
     from .store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 else:
+    from conversation import MAX_ANSWERS_PER_THREAD, generate
     from slack_reply import PermanentSlackError, SlackReplyAdapter
     from store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 
 
-FIXED_REPLY = "（応答生成は準備中です）"
 MIN_REMAINING_MS = 5_000
 MAX_MESSAGE_BYTES = 128 * 1024
+ANSWER_LIMIT_NOTICE = "このスレッドは回答の上限に達しました。新しいスレッドを開始してください。"
 MESSAGE_FIELDS = {
     "schema_version",
     "event_id",
@@ -175,6 +177,7 @@ def process(event, context, store=None, adapter=None):
                 _thread_hash(message),
                 context.aws_request_id,
                 received_at=message["received_at"],
+                remaining_ms=context.get_remaining_time_in_millis(),
             ),
         )
     except SessionStopped:
@@ -200,12 +203,20 @@ def process(event, context, store=None, adapter=None):
             return "isolated"
         if "phase" in saved:
             raise Conflict("Unknown execution phase")
-        saved = _stage("started", event_id, context, lambda: store.started(saved))
+        if saved.get("answer_count", 0) >= MAX_ANSWERS_PER_THREAD:
+            reply = ANSWER_LIMIT_NOTICE
+            answer_limit_notice = True
+        else:
+            saved = _stage("started", event_id, context, lambda: store.started(saved))
+            reply = _stage(
+                "conversation", event_id, context, lambda: generate(message)
+            )
+            answer_limit_notice = False
         saved = _stage(
             "generated",
             event_id,
             context,
-            lambda: store.generated(saved, FIXED_REPLY),
+            lambda: store.generated(saved, reply, answer_limit_notice=answer_limit_notice),
         )
     elif saved["status"] not in {"GENERATED", "POSTING"}:
         raise Conflict("Unknown event status")

@@ -28,11 +28,13 @@ run "initial_settings" {
       aws_lambda_function.app["ingress"].timeout * 1000 > aws_apigatewayv2_integration.ingress.timeout_milliseconds &&
       aws_apigatewayv2_integration.ingress.timeout_milliseconds == local.api_integration_timeout_milliseconds &&
       !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
-      aws_lambda_function.app["worker"].timeout == 120 &&
-      aws_sqs_queue.events.visibility_timeout_seconds == 720 &&
+      aws_lambda_function.app["worker"].timeout == 300 &&
+      aws_sqs_queue.events.visibility_timeout_seconds == 1800 &&
       aws_lambda_function.app["worker"].reserved_concurrent_executions == 5 &&
       aws_lambda_event_source_mapping.worker.scaling_config[0].maximum_concurrency == 5 &&
       aws_lambda_event_source_mapping.worker.batch_size == 1
+      && output.app_config.worker.Environment.Variables.BEDROCK_MODEL_ID == "global.anthropic.claude-opus-5"
+      && output.app_config.worker.Environment.Variables.ENVIRONMENT == "dev"
     )
     error_message = "Lambda and queue settings must preserve ADR-001's initial contract."
   }
@@ -51,6 +53,25 @@ run "initial_settings" {
     )
     error_message = "FIFO ordering, storage keys and retention must match the application contract."
   }
+}
+
+run "global_bedrock_arns" {
+  command = plan
+  variables {
+    bedrock_resource_arns = [
+      format("arn:aws:bedrock:ap-northeast-1:%012d:inference-profile/global.anthropic.claude-opus-5", 0),
+      "arn:aws:bedrock:::foundation-model/anthropic.claude-opus-5",
+      "arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-opus-5"
+    ]
+  }
+}
+
+run "reject_bedrock_wildcards" {
+  command = plan
+  variables {
+    bedrock_resource_arns = ["arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-5"]
+  }
+  expect_failures = [var.bedrock_resource_arns]
 }
 
 run "production_isolation" {

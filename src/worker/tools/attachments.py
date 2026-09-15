@@ -2,7 +2,7 @@
 
 import time
 
-from worker.tools.url import TEXT_TYPES, FetchError, _decode_text, _fetch, _log
+from .url import TEXT_TYPES, FetchError, _decode_text, _fetch, _log
 
 MAX_ATTACHMENTS = 3
 
