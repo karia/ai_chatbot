@@ -61,12 +61,20 @@ variable "api_burst_limit" {
   default = 20
 }
 
-# PR10 selects the model and supplies the exact model/profile resource ARNs.
+variable "bedrock_model_id" {
+  type    = string
+  default = "global.anthropic.claude-opus-5"
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9._:-]+$", var.bedrock_model_id))
+    error_message = "Supply an exact Bedrock model ID or inference profile."
+  }
+}
+
 variable "bedrock_resource_arns" {
   type    = set(string)
   default = []
   validation {
-    condition     = alltrue([for arn in var.bedrock_resource_arns : can(regex("^arn:[^:]+:bedrock:[^:]+:[0-9]*:(foundation-model|inference-profile|application-inference-profile)/[^*?]+$", arn))])
+    condition     = alltrue([for arn in var.bedrock_resource_arns : can(regex("^arn:[^:*?]+:bedrock:[^:*?]*:[0-9]*:(foundation-model|inference-profile|application-inference-profile)/[^*?:]+$", arn))])
     error_message = "Supply exact Bedrock model or inference profile ARNs without wildcards."
   }
 }
