@@ -35,7 +35,7 @@ variable "ingress_timeout" {
 
 variable "worker_timeout" {
   type    = number
-  default = 120
+  default = 300
   validation {
     condition     = var.worker_timeout >= 120 && var.worker_timeout <= 900 && floor(var.worker_timeout) == var.worker_timeout
     error_message = "Worker timeout must be an integer from 120 to 900 seconds."

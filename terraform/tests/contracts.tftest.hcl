@@ -28,8 +28,8 @@ run "initial_settings" {
       aws_lambda_function.app["ingress"].timeout * 1000 > aws_apigatewayv2_integration.ingress.timeout_milliseconds &&
       aws_apigatewayv2_integration.ingress.timeout_milliseconds == local.api_integration_timeout_milliseconds &&
       !aws_dynamodb_table.state.point_in_time_recovery[0].enabled &&
-      aws_lambda_function.app["worker"].timeout == 120 &&
-      aws_sqs_queue.events.visibility_timeout_seconds == 720 &&
+      aws_lambda_function.app["worker"].timeout == 300 &&
+      aws_sqs_queue.events.visibility_timeout_seconds == 1800 &&
       aws_lambda_function.app["worker"].reserved_concurrent_executions == 5 &&
       aws_lambda_event_source_mapping.worker.scaling_config[0].maximum_concurrency == 5 &&
       aws_lambda_event_source_mapping.worker.batch_size == 1
