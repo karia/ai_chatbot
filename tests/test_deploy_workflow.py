@@ -24,7 +24,7 @@ def test_deployment_is_main_only_and_environment_gated():
     }
     assert steps['Deploy infrastructure']['env'] == {
         'TF_VAR_state_bucket': '${{ secrets.TF_STATE_BUCKET }}',
-        'TF_VAR_bedrock_resource_arns': "${{ vars.BEDROCK_RESOURCE_ARNS || '[]' }}",
+        'TF_VAR_bedrock_resource_arns': "${{ secrets.BEDROCK_RESOURCE_ARNS || '[]' }}",
         'TF_VAR_slack_team_id': '${{ secrets.SLACK_TEAM_ID }}',
         'TF_VAR_slack_api_app_id': '${{ secrets.SLACK_API_APP_ID }}',
     }
