@@ -105,6 +105,61 @@ def test_saved_turn_reads_converter_payload_and_rejects_other_events():
     assert not conversation._saved_turn(events, "Ev2", "Slack user U1: hello", "answer")
 
 
+@pytest.mark.parametrize("reason", ["max_tokens", "limit_turns", "limit_output_tokens", "limit_total_tokens"])
+@pytest.mark.parametrize("text", ["partial answer", ""])
+def test_limit_stop_returns_partial_text_and_notice_after_memory_confirmation(monkeypatch, reason, text):
+    calls = []
+
+    class Memory:
+        def __init__(self, config):
+            self.memory_client = self
+
+        def list_events(self, **kwargs):
+            calls.append("list")
+            if len(calls) == 1:
+                return []
+            events = [memory_event("user", [{"text": "Slack user U1: hello"}])]
+            if text:
+                events.append(memory_event("assistant", [{"text": text}]))
+            return events
+
+        def close(self):
+            calls.append("close")
+
+    monkeypatch.setenv("MEMORY_ID", "memory-test")
+    monkeypatch.setattr(conversation, "AgentCoreMemorySessionManager", Memory)
+    monkeypatch.setattr(conversation, "BedrockModel", lambda **kwargs: kwargs)
+    monkeypatch.setattr(conversation, "Agent", lambda **kwargs: lambda *args, **kwargs: SimpleNamespace(
+        stop_reason=reason, message={"content": [{"text": text}]},
+        metrics=SimpleNamespace(cycles=[], usage={}, tool_metrics={}),
+    ))
+
+    expected = f"{text}\n\n{conversation.LIMIT_STOP_NOTICE}" if text else conversation.LIMIT_STOP_NOTICE
+    assert conversation.generate(message()) == expected
+    assert calls == ["list", "close", "list"]
+
+
+def test_limit_stop_still_rejects_unconfirmed_partial_answer(monkeypatch):
+    class Memory:
+        def __init__(self, config):
+            self.memory_client = self
+
+        def list_events(self, **kwargs):
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("MEMORY_ID", "memory-test")
+    monkeypatch.setattr(conversation, "AgentCoreMemorySessionManager", Memory)
+    monkeypatch.setattr(conversation, "BedrockModel", lambda **kwargs: kwargs)
+    monkeypatch.setattr(conversation, "Agent", lambda **kwargs: lambda *args, **kwargs: SimpleNamespace(
+        stop_reason="limit_turns", message={"content": [{"text": "partial answer"}]},
+    ))
+    with pytest.raises(conversation.MemoryUnconfirmed):
+        conversation.generate(message())
+
+
 def test_incomplete_memory_save_is_not_accepted(monkeypatch):
     class Memory:
         def __init__(self, config, **kwargs):

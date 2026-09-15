@@ -4,6 +4,7 @@ import pytest
 
 from ingress.events import normalize
 from worker import app, pipeline
+from worker.conversation import MAX_ANSWERS_PER_THREAD
 from worker.pipeline import (
     MAX_MESSAGE_BYTES,
     MESSAGE_FIELDS,
@@ -25,7 +26,7 @@ def mock_conversation(monkeypatch):
 class Context:
     aws_request_id = "request-test"
 
-    def __init__(self, remaining=120_000):
+    def __init__(self, remaining=300_000):
         self.remaining = remaining
 
     def get_remaining_time_in_millis(self):
@@ -51,9 +52,9 @@ class Store:
         self.calls.append(("started",))
         return {**event, "phase": "EXECUTING"}
 
-    def generated(self, event, reply):
+    def generated(self, event, reply, *, answer_limit_notice=False):
         self.calls.append(("generated", reply))
-        return {**event, "status": "GENERATED", "reply": reply}
+        return {**event, "status": "GENERATED", "reply": reply, "answer_limit_notice": answer_limit_notice}
 
     def needs_review(self, event, failure):
         self.calls.append(("needs_review", failure))
@@ -286,14 +287,21 @@ def test_memory_failure_never_marks_generated(message, monkeypatch):
     assert adapter.calls == []
 
 
-def test_answer_limit_stops_before_model(message, monkeypatch):
-    store = Store({"status": "RUNNING", "answer_count": 50})
+def test_answer_limit_posts_notice_and_completes_without_model(message, monkeypatch):
+    store = Store({"status": "RUNNING", "answer_count": MAX_ANSWERS_PER_THREAD})
     adapter = Adapter()
     monkeypatch.setattr(pipeline, "generate", lambda _: pytest.fail("model invoked"))
 
-    assert process(sqs(message), Context(), store, adapter) == "isolated"
-    assert [call[0] for call in store.calls] == ["acquire", "needs_review"]
-    assert adapter.calls == []
+    assert process(sqs(message), Context(), store, adapter) == "completed"
+    assert [call[0] for call in store.calls] == ["acquire", "generated"]
+    assert adapter.calls[0][0]["reply"] == pipeline.ANSWER_LIMIT_NOTICE
+    assert adapter.calls[0][0]["answer_limit_notice"] is True
+
+
+def test_last_allowed_answer_still_generates(message):
+    store = Store({"status": "RUNNING", "answer_count": MAX_ANSWERS_PER_THREAD - 1})
+    assert process(sqs(message), Context(), store, Adapter()) == "completed"
+    assert [call[0] for call in store.calls] == ["acquire", "started", "generated"]
 
 
 @pytest.mark.parametrize(
@@ -367,8 +375,8 @@ def test_low_budget_after_generation_does_not_create_slack_adapter(
     store = Store()
     generated = store.generated
 
-    def exhaust(event, reply):
-        result = generated(event, reply)
+    def exhaust(event, reply, **kwargs):
+        result = generated(event, reply, **kwargs)
         context.remaining = 0
         return result
 

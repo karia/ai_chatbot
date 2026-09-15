@@ -24,11 +24,13 @@ else:
 
 MODEL_ID = "global.anthropic.claude-opus-5"
 MAX_MODEL_TURNS = 4
+MAX_ANSWERS_PER_THREAD = 100
 MAX_TOOL_CALLS = 3
-MAX_OUTPUT_TOKENS = 1024
+MAX_OUTPUT_TOKENS = 8192
 MAX_MEMORY_EVENTS = 1000
 MAX_PROMPT_CHARS = 8000
 MAX_TOOL_TEXT_CHARS = 16000
+LIMIT_STOP_NOTICE = "回答が上限に達したため、途中で打ち切られました。"
 
 
 class MemoryUnconfirmed(RuntimeError):
@@ -84,7 +86,7 @@ def _saved_turn(events, event_id, prompt, reply):
                 found.add("assistant")
             if role == "user" and content == [prompt]:
                 found.add("user")
-    return found == {"user", "assistant"}
+    return found == ({"user", "assistant"} if reply else {"user"})
 
 
 def _tools(message):
@@ -173,22 +175,24 @@ def generate(message):
             _record(logging.WARNING, operation="prompt_limit", event_id=message["event_id"])
             prompt = prompt[:MAX_PROMPT_CHARS] + " [truncated]"
         result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS})
-        if result.stop_reason != "end_turn":
+        limited = result.stop_reason == "max_tokens" or result.stop_reason.startswith("limit_")
+        if result.stop_reason != "end_turn" and not limited:
             raise RuntimeError(f"Model stopped: {result.stop_reason}")
-        reply = "\n".join(
+        model_text = "\n".join(
             block["text"].strip() for block in result.message.get("content", [])
             if isinstance(block, dict) and isinstance(block.get("text"), str)
             and block["text"].strip()
         )
-        if not reply:
+        if not model_text and not limited:
             raise RuntimeError("Model returned no text")
+        reply = f"{model_text}\n\n{LIMIT_STOP_NOTICE}" if model_text and limited else LIMIT_STOP_NOTICE if limited else model_text
         closed = True
         manager.close()
         events = manager.memory_client.list_events(
             memory_id=config.memory_id, actor_id=actor, session_id=session,
             max_results=MAX_MEMORY_EVENTS, include_payload=True,
         )
-        if not _saved_turn(events, message["event_id"], prompt, reply):
+        if not _saved_turn(events, message["event_id"], prompt, model_text):
             raise MemoryUnconfirmed("Memory did not confirm the conversation turn")
         metrics = result.metrics
         _record(

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import os
 import time
 from decimal import Decimal
@@ -12,7 +13,7 @@ from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
 
-LEASE_SECONDS = 180
+LEASE_MARGIN_SECONDS = 30
 EVENT_TTL_SECONDS = 30 * 86400
 
 
@@ -121,7 +122,7 @@ class Store:
         _log(level, "state_written", item)
         return item
 
-    def acquire(self, team, event, thread_hash, owner, *, received_at):
+    def acquire(self, team, event, thread_hash, owner, *, received_at, remaining_ms):
         """Use the original receipt time on every delivery; never renew event TTL.
 
         COMPLETED is returned unchanged. Other returned states have a new lease;
@@ -161,7 +162,7 @@ class Store:
             "answer_count": updated_session["answer_count"],
             "owner": owner,
             "attempt": previous["attempt"] + 1 if previous else 1,
-            "lease_until": now + LEASE_SECONDS,
+            "lease_until": now + math.ceil(remaining_ms / 1000) + LEASE_MARGIN_SECONDS,
         }
         return self._write(self._put(item, previous), self._put(updated_session, session))
 
@@ -182,7 +183,8 @@ class Store:
         updated_session = {**session, "updated_at": _now()}
         if status == "COMPLETED":
             del updated_session["active_event_id"]
-            updated_session["answer_count"] += 1
+            if not event.get("answer_limit_notice"):
+                updated_session["answer_count"] += 1
         else:
             updated_session["stop_reason"] = fields["failure"]
         return self._write(event_write, self._put(updated_session, session))
@@ -211,10 +213,10 @@ class Store:
             event, status, {"RUNNING", "GENERATED", "POSTING"}, retry_at=retry_at
         )
 
-    def generated(self, event, reply):
-        """Persist only after Memory saving has completed."""
+    def generated(self, event, reply, *, answer_limit_notice=False):
+        """Persist the reply before posting; model replies require confirmed Memory."""
         reply = reply.encode("utf-8")[:65536].decode("utf-8", errors="ignore")
-        return self._transition(event, "GENERATED", {"RUNNING"}, reply=reply)
+        return self._transition(event, "GENERATED", {"RUNNING"}, reply=reply, answer_limit_notice=answer_limit_notice)
 
     def posting(self, event):
         return self._transition(event, "POSTING", {"GENERATED"})

@@ -26,15 +26,15 @@ def state(monkeypatch):
         yield Store(), table, now
 
 
-def acquire(store, event="E", owner="one"):
-    return store.acquire("T", event, "thread", owner, received_at=1000)
+def acquire(store, event="E", owner="one", remaining_ms=300_000):
+    return store.acquire("T", event, "thread", owner, received_at=1000, remaining_ms=remaining_ms)
 
 
 def test_acquire_is_atomic_and_excludes_competitors(state):
     store, table, now = state
     first = acquire(store)
     assert first["pk"] == "EVENT#T#E"
-    assert first["lease_until"] == 1180
+    assert first["lease_until"] == 1330
     assert first["attempt"] == 1
     assert first["expires_at"] == 1000 + 30 * 86400
     assert store.get_session("thread")["active_event_id"] == first["pk"]
@@ -43,12 +43,33 @@ def test_acquire_is_atomic_and_excludes_competitors(state):
     with pytest.raises(Conflict):
         acquire(store, event="other")
     assert store.get_event("T", "other") is None
-    now[0] = 1180
+    now[0] = 1330
     second = acquire(store, owner="two")
     assert second["attempt"] == 2
     with pytest.raises(Conflict):
         store.generated(first, "stale")
     assert store.get_event("T", "E")["owner"] == "two"
+
+
+@pytest.mark.parametrize("remaining_ms", [300_000, 900_000, 300_001])
+def test_lease_exceeds_remaining_lambda_time(state, remaining_ms):
+    store, table, now = state
+    event = acquire(store, remaining_ms=remaining_ms)
+    assert event["lease_until"] - now[0] > remaining_ms / 1000
+
+
+def test_limit_notice_does_not_increment_answer_count(state):
+    store, table, now = state
+    event = acquire(store)
+    table.update_item(
+        Key={"pk": "SESSION#thread"},
+        UpdateExpression="SET answer_count = :count",
+        ExpressionAttributeValues={":count": 100},
+    )
+    event = store.generated(event, "新しいスレッドを開始してください。", answer_limit_notice=True)
+    store.complete(store.posting(event), "123.456")
+    assert store.get_session("thread")["answer_count"] == 100
+    assert store.get_event("T", "E")["status"] == "COMPLETED"
 
 
 def test_acquire_distinguishes_busy_and_stopped_sessions(state):
@@ -104,7 +125,7 @@ def test_stopped_session_survives_event_expiration(state, deleted):
     assert session["stop_reason"] == "memory_unknown"
     assert "expires_at" not in session
     with pytest.raises(Conflict):
-        store.acquire("T", "new", "thread", "two", received_at=now[0])
+        store.acquire("T", "new", "thread", "two", received_at=now[0], remaining_ms=300_000)
     assert store.get_event("T", "new") is None
 
 
@@ -141,7 +162,7 @@ def test_resume_retains_reply_and_rejects_wrong_owner_or_attempt(state):
     for changes in ({"owner": "other"}, {"attempt": 2}):
         with pytest.raises(Conflict):
             store.posting({**event, **changes})
-    now[0] = 1180
+    now[0] = 1330
     resumed = acquire(store, owner="two")
     assert resumed["status"] == "GENERATED"
     assert resumed["reply"] == event["reply"]
@@ -153,7 +174,7 @@ def test_lease_expiry_and_invalid_transition_do_not_write(state):
     event = acquire(store)
     with pytest.raises(Conflict):
         store.complete(event, "123.456")
-    now[0] = 1180
+    now[0] = 1330
     with pytest.raises(Conflict):
         store.generated(event, "late")
     assert store.get_event("T", "E")["status"] == "RUNNING"
@@ -202,14 +223,14 @@ def test_phase_retry_time_and_memory_mapping_survive_resume(state):
     with pytest.raises(Conflict):
         store.bind_memory("thread", "different-memory-session")
     event = store.started(event)
-    event = store.defer(event, 1300)
-    now[0] = 1180
+    event = store.defer(event, 1400)
+    now[0] = 1330
     with pytest.raises(Conflict):
         acquire(store, owner="two")
-    now[0] = 1300
+    now[0] = 1400
     resumed = acquire(store, owner="two")
     assert resumed["phase"] == "EXECUTING"
-    assert resumed["retry_at"] == 1300
+    assert resumed["retry_at"] == 1400
     session = store.get_session("thread")
     assert session["memory_session_id"] == "memory-session"
     assert session["active_event_id"] == event["pk"]
@@ -230,14 +251,14 @@ def test_logs_are_structured_and_level_controlled(state, monkeypatch, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_fractional_lease_expires_after_exactly_180_seconds(state):
+def test_fractional_lease_expires_after_remaining_time_plus_margin(state):
     store, table, now = state
     now[0] = 1000.9
     event = acquire(store)
-    now[0] = 1180.1
+    now[0] = 1330.1
     with pytest.raises(Conflict):
         acquire(store, owner="two")
-    now[0] = 1180.9
+    now[0] = 1330.9
     with pytest.raises(Conflict):
         store.generated(event, "late")
     assert acquire(store, owner="two")["attempt"] == 2
@@ -328,13 +349,13 @@ def test_defer_accepts_float_retry_time(state):
 
     store, table, now = state
     event = acquire(store)
-    deferred = store.defer(event, time.time() + 300.5)
-    assert deferred["retry_at"] == Decimal("1300.5")
-    assert store.get_event("T", "E")["retry_at"] == Decimal("1300.5")
-    now[0] = 1300.4
+    deferred = store.defer(event, time.time() + 350.5)
+    assert deferred["retry_at"] == Decimal("1350.5")
+    assert store.get_event("T", "E")["retry_at"] == Decimal("1350.5")
+    now[0] = 1350.4
     with pytest.raises(Conflict):
         acquire(store, owner="two")
-    now[0] = 1300.5
+    now[0] = 1350.5
     assert acquire(store, owner="two")["attempt"] == 2
 
 
@@ -387,7 +408,7 @@ def test_split_posts_are_reserved_and_saved_in_order(state):
     event = store.start_post(event, 0, "T", "C")
     assert event["posting_part"] == 0
     assert table.get_item(Key={"pk": "RATE#T#C"})["Item"]["next_post_at"] == 1001
-    other = store.acquire("T", "other", "other-thread", "one", received_at=1000)
+    other = store.acquire("T", "other", "other-thread", "one", received_at=1000, remaining_ms=300_000)
     other = store.prepare_posts(store.generated(other, "x"), [1])
     with pytest.raises(Conflict):
         store.start_post(other, 0, "T", "C")
@@ -409,11 +430,11 @@ def test_split_post_state_rejects_skips_and_can_defer_a_definite_rejection(state
     event = store.start_post(event, 0, "T", "C")
     with pytest.raises(Conflict):
         store.start_post(event, 0, "T", "other")
-    deferred = store.defer_post(event, 1200)
+    deferred = store.defer_post(event, 1400)
     assert deferred["status"] == "GENERATED"
-    assert deferred["retry_at"] == 1200
+    assert deferred["retry_at"] == 1400
     assert "posting_part" not in deferred
-    now[0] = 1200
+    now[0] = 1400
     resumed = acquire(store, owner="two")
     assert resumed["slack_parts"] == [{"end": 4}, {"end": 8}]
 
@@ -421,8 +442,8 @@ def test_split_post_state_rejects_skips_and_can_defer_a_definite_rejection(state
 def test_split_plan_cannot_change_after_posting_starts(state):
     store, table, now = state
     event = store.prepare_posts(store.generated(acquire(store), "abcdefgh"), [4, 8])
-    event = store.defer_post(store.start_post(event, 0, "T", "C"), 1180)
-    now[0] = 1180
+    event = store.defer_post(store.start_post(event, 0, "T", "C"), 1380)
+    now[0] = 1380
     event = acquire(store, owner="two")
     with pytest.raises(Conflict):
         store.prepare_posts(event, [8])
