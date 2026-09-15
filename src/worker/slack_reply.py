@@ -11,9 +11,9 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError, SlackRequestError
 
 if __package__:
-    from .store import Store
+    from .store import PostingSlotUnavailable, Store
 else:
-    from store import Store
+    from store import PostingSlotUnavailable, Store
 
 
 MESSAGE_LIMIT = 40_000
@@ -140,7 +140,19 @@ class SlackReplyAdapter:
             start = end
             if "ts" in part:
                 continue
-            event = self.store.start_post(event, index, team, channel)
+            for attempt in range(10):
+                try:
+                    event = self.store.start_post(event, index, team, channel)
+                    break
+                except PostingSlotUnavailable as error:
+                    wait = max(0, float(error.next_post_at) - self.now())
+                    if (
+                        attempt < 9
+                        and wait * 1_000 < context.get_remaining_time_in_millis()
+                    ):
+                        self.sleep(wait)
+                        continue
+                    raise
             self.event = event
             self._log_text("slack_post", text, part=index)
             response = self._call(

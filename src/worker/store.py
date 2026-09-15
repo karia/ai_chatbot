@@ -20,6 +20,12 @@ class Conflict(Exception):
     """State changed, a lease is unavailable, or the session is stopped; retry."""
 
 
+class PostingSlotUnavailable(Conflict):
+    def __init__(self, next_post_at):
+        super().__init__("Posting slot is unavailable")
+        self.next_post_at = next_post_at
+
+
 class SessionBusy(Conflict):
     """Another event owns the session; retry after it completes."""
 
@@ -280,7 +286,7 @@ class Store:
         pk = f"RATE#{team}#{channel}"
         previous = self._get(pk)
         if previous and previous["next_post_at"] > now:
-            raise Conflict("Posting slot is unavailable")
+            raise PostingSlotUnavailable(previous["next_post_at"])
         next_post_at = now + 1
         return self._put({"pk": pk, "next_post_at": next_post_at}, previous), next_post_at
 

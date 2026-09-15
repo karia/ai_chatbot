@@ -2,7 +2,14 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from worker.store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
+from worker.store import (
+    Conflict,
+    EventExpired,
+    PostingSlotUnavailable,
+    SessionBusy,
+    SessionStopped,
+    Store,
+)
 
 
 @pytest.fixture
@@ -104,8 +111,9 @@ def test_stopped_session_survives_event_expiration(state, deleted):
 def test_rate_slot_competition_and_channel_isolation(state):
     store, table, now = state
     assert store.reserve_post("T", "C") == 1001
-    with pytest.raises(Conflict):
+    with pytest.raises(PostingSlotUnavailable) as caught:
         store.reserve_post("T", "C")
+    assert caught.value.next_post_at == 1001
     assert store.reserve_post("T", "other") == 1001
     now[0] = 1001
     assert store.reserve_post("T", "C") == 1002

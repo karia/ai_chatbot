@@ -9,6 +9,7 @@ from worker.slack_reply import (
     RetryableSlackError,
     SlackReplyAdapter,
 )
+from worker.store import Conflict, PostingSlotUnavailable
 
 
 class Response:
@@ -37,12 +38,19 @@ class Client:
 
 
 class Store:
+    def __init__(self, *start_errors):
+        self.start_errors = list(start_errors)
+        self.start_calls = 0
+
     def prepare_posts(self, event, splits):
         event = {**event, "status": "POSTING"}
         event.setdefault("slack_parts", [{"end": end} for end in splits])
         return event
 
     def start_post(self, event, index, team, channel):
+        self.start_calls += 1
+        if self.start_errors:
+            raise self.start_errors.pop(0)
         return {**event, "posting_part": index}
 
     def posted(self, event, index, ts):
@@ -173,6 +181,52 @@ def test_429_defers_without_waiting_when_time_is_insufficient():
     assert store.event["status"] == "GENERATED"
     assert store.event["retry_at"] == 103
     assert len(client.calls) == 1
+
+
+def test_posting_slot_waits_and_retries_once_when_time_remains():
+    store = Store(PostingSlotUnavailable(101))
+    sleeps = []
+
+    SlackReplyAdapter(
+        store=store,
+        client=Client({"ts": "1.0"}),
+        sleep=sleeps.append,
+        now=lambda: 100,
+    ).send(event(), "T", "C", "root", Context(1_001))
+
+    assert sleeps == [1]
+    assert store.start_calls == 2
+    assert store.event["status"] == "COMPLETED"
+
+
+def test_posting_slot_stays_retryable_when_time_is_insufficient():
+    sleeps = []
+
+    with pytest.raises(Conflict, match="Posting slot is unavailable"):
+        SlackReplyAdapter(
+            store=Store(PostingSlotUnavailable(101)),
+            client=Client(),
+            sleep=sleeps.append,
+            now=lambda: 100,
+        ).send(event(), "T", "C", "root", Context(1_000))
+
+    assert sleeps == []
+
+
+def test_posting_slot_retry_is_capped_at_ten_attempts():
+    store = Store(*(PostingSlotUnavailable(101) for _ in range(10)))
+    sleeps = []
+
+    with pytest.raises(Conflict, match="Posting slot is unavailable"):
+        SlackReplyAdapter(
+            store=store,
+            client=Client(),
+            sleep=sleeps.append,
+            now=lambda: 100,
+        ).send(event(), "T", "C", "root", Context(10_000))
+
+    assert store.start_calls == 10
+    assert sleeps == [1] * 9
 
 
 @pytest.mark.parametrize("retry_after", [None, "invalid"])
