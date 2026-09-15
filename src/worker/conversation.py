@@ -13,6 +13,7 @@ from slack_sdk import WebClient
 from strands import Agent, tool
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.models import BedrockModel
+from strands.types.exceptions import MaxTokensReachedException
 
 if __package__:
     from .tools.attachments import MAX_ATTACHMENTS, fetch_attachments
@@ -76,17 +77,37 @@ def _event_role_text(event):
 
 
 def _saved_turn(events, event_id, prompt, reply):
+    replies = [reply] if isinstance(reply, str) else reply
+    replies = [text for text in replies if text]
     found = set()
     for event in events:
         metadata = event.get("metadata", {})
         if metadata.get("event_id", {}).get("stringValue") != event_id:
             continue
         for role, content in _event_role_text(event):
-            if role == "assistant" and "\n".join(text.strip() for text in content if text.strip()) == reply:
-                found.add("assistant")
+            text = "\n".join(item.strip() for item in content if item.strip())
+            if role == "assistant" and text and text in replies:
+                found.add(text)
             if role == "user" and content == [prompt]:
                 found.add("user")
-    return found == ({"user", "assistant"} if reply else {"user"})
+    return "user" in found and all(text in found for text in replies)
+
+
+def _assistant_texts(agent, prompt):
+    """Read assistant text added after this invocation's user prompt."""
+    texts = []
+    for message in reversed(agent.messages):
+        if message.get("role") == "user" and message.get("content") == [{"text": prompt}]:
+            break
+        if message.get("role") == "assistant":
+            text = "\n".join(
+                block["text"].strip() for block in message.get("content", [])
+                if isinstance(block, dict) and isinstance(block.get("text"), str)
+                and block["text"].strip()
+            )
+            if text:
+                texts.append(text)
+    return list(reversed(texts))
 
 
 def _tools(message):
@@ -174,15 +195,19 @@ def generate(message):
         if len(prompt) > MAX_PROMPT_CHARS:
             _record(logging.WARNING, operation="prompt_limit", event_id=message["event_id"])
             prompt = prompt[:MAX_PROMPT_CHARS] + " [truncated]"
-        result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS})
-        limited = result.stop_reason == "max_tokens" or result.stop_reason.startswith("limit_")
-        if result.stop_reason != "end_turn" and not limited:
+        try:
+            result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS})
+        except MaxTokensReachedException:
+            result = None
+        limited = result is None or result.stop_reason.startswith("limit_")
+        if result is not None and result.stop_reason != "end_turn" and not limited:
             raise RuntimeError(f"Model stopped: {result.stop_reason}")
-        model_text = "\n".join(
+        model_texts = _assistant_texts(agent, prompt) if limited else ["\n".join(
             block["text"].strip() for block in result.message.get("content", [])
             if isinstance(block, dict) and isinstance(block.get("text"), str)
             and block["text"].strip()
-        )
+        )]
+        model_text = "\n".join(model_texts)
         if not model_text and not limited:
             raise RuntimeError("Model returned no text")
         reply = f"{model_text}\n\n{LIMIT_STOP_NOTICE}" if model_text and limited else LIMIT_STOP_NOTICE if limited else model_text
@@ -192,15 +217,16 @@ def generate(message):
             memory_id=config.memory_id, actor_id=actor, session_id=session,
             max_results=MAX_MEMORY_EVENTS, include_payload=True,
         )
-        if not _saved_turn(events, message["event_id"], prompt, model_text):
+        if not _saved_turn(events, message["event_id"], prompt, model_texts):
             raise MemoryUnconfirmed("Memory did not confirm the conversation turn")
-        metrics = result.metrics
+        metrics = result.metrics if result is not None else agent.event_loop_metrics
+        invocation = metrics.latest_agent_invocation if hasattr(metrics, "latest_agent_invocation") else metrics
         _record(
             logging.INFO, operation="generated", event_id=message["event_id"],
             duration_ms=round((time.monotonic() - started) * 1000, 3),
-            model_calls=len(metrics.cycles),
+            model_calls=len(invocation.cycles),
             tool_calls=sum(item.call_count for item in metrics.tool_metrics.values()),
-            output_tokens=metrics.usage.get("outputTokens", 0),
+            output_tokens=invocation.usage.get("outputTokens", 0),
             model_input=prompt[:1000], model_input_truncated=len(prompt) > 1000,
             model_output=reply[:1000], model_output_truncated=len(reply) > 1000,
         )
