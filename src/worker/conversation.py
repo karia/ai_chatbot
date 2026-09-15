@@ -65,8 +65,12 @@ def _event_role_text(event):
             payload = json.loads(content)
         except (ValueError, TypeError):
             continue
-        if isinstance(payload, dict):
-            yield payload.get("role"), payload.get("content")
+        message = payload.get("message") if isinstance(payload, dict) else None
+        if isinstance(message, dict) and isinstance(message.get("content"), list):
+            yield message.get("role"), [
+                block["text"] for block in message["content"]
+                if isinstance(block, dict) and isinstance(block.get("text"), str)
+            ]
 
 
 def _saved_turn(events, event_id, prompt, reply):
@@ -76,9 +80,9 @@ def _saved_turn(events, event_id, prompt, reply):
         if metadata.get("event_id", {}).get("stringValue") != event_id:
             continue
         for role, content in _event_role_text(event):
-            if role == "assistant" and content == reply:
+            if role == "assistant" and "\n".join(text.strip() for text in content if text.strip()) == reply:
                 found.add("assistant")
-            if role == "user" and content == prompt:
+            if role == "user" and content == [prompt]:
                 found.add("user")
     return found == {"user", "assistant"}
 
@@ -168,7 +172,7 @@ def generate(message):
         if len(prompt) > MAX_PROMPT_CHARS:
             _record(logging.WARNING, operation="prompt_limit", event_id=message["event_id"])
             prompt = prompt[:MAX_PROMPT_CHARS] + " [truncated]"
-        result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS})
+        result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS})
         if result.stop_reason != "end_turn":
             raise RuntimeError(f"Model stopped: {result.stop_reason}")
         reply = "\n".join(
