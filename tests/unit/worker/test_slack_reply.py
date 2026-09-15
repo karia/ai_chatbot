@@ -156,34 +156,34 @@ def test_resume_skips_multiple_known_posts_and_only_posts_missing_parts():
     assert store.event["slack_ts"] == "3.0"
 
 
-def test_429_waits_and_retries_once_when_time_remains():
+def test_429_waits_and_retries_once_with_reserve_remaining():
     store = Store()
     client = Client(slack_error(429, 2), {"ts": "1.0"})
     sleeps = []
 
     SlackReplyAdapter(
         store=store, client=client, sleep=sleeps.append, now=lambda: 100
-    ).send(event(), "T", "C", "root", Context(2_001))
+    ).send(event(), "T", "C", "root", Context(7_001))
 
     assert sleeps == [2]
     assert len(client.calls) == 2
     assert store.event["status"] == "COMPLETED"
 
 
-def test_429_defers_without_waiting_when_time_is_insufficient():
+def test_429_defers_without_waiting_at_reserve_boundary():
     store = Store()
     client = Client(slack_error(429, 3))
     adapter = SlackReplyAdapter(store=store, client=client, now=lambda: 100)
 
     with pytest.raises(RetryableSlackError):
-        adapter.send(event(), "T", "C", "root", Context(3_000))
+        adapter.send(event(), "T", "C", "root", Context(8_000))
 
     assert store.event["status"] == "GENERATED"
     assert store.event["retry_at"] == 103
     assert len(client.calls) == 1
 
 
-def test_posting_slot_waits_and_retries_once_when_time_remains():
+def test_posting_slot_waits_and_retries_once_with_reserve_remaining(capsys):
     store = Store(PostingSlotUnavailable(101))
     sleeps = []
 
@@ -192,14 +192,21 @@ def test_posting_slot_waits_and_retries_once_when_time_remains():
         client=Client({"ts": "1.0"}),
         sleep=sleeps.append,
         now=lambda: 100,
-    ).send(event(), "T", "C", "root", Context(1_001))
+    ).send(event(), "T", "C", "root", Context(6_001))
 
     assert sleeps == [1]
     assert store.start_calls == 2
     assert store.event["status"] == "COMPLETED"
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[0] == {
+        "level": "WARNING",
+        "operation": "posting_slot_wait",
+        "attempt": 1,
+        "wait": 1.0,
+    }
 
 
-def test_posting_slot_stays_retryable_when_time_is_insufficient():
+def test_posting_slot_stays_retryable_at_reserve_boundary():
     sleeps = []
 
     with pytest.raises(Conflict, match="Posting slot is unavailable"):
@@ -208,8 +215,23 @@ def test_posting_slot_stays_retryable_when_time_is_insufficient():
             client=Client(),
             sleep=sleeps.append,
             now=lambda: 100,
-        ).send(event(), "T", "C", "root", Context(1_000))
+        ).send(event(), "T", "C", "root", Context(6_000))
 
+    assert sleeps == []
+
+
+def test_plain_start_post_conflict_propagates_without_retry():
+    store = Store(Conflict("stale event"))
+    sleeps = []
+
+    with pytest.raises(Conflict, match="stale event"):
+        SlackReplyAdapter(
+            store=store,
+            client=Client(),
+            sleep=sleeps.append,
+        ).send(event(), "T", "C", "root", Context(10_000))
+
+    assert store.start_calls == 1
     assert sleeps == []
 
 
