@@ -38,12 +38,16 @@ class MockAgent:
     def __init__(self, result):
         self.result = result
         self.messages = []
+        self.callbacks = []
+        self.hooks = SimpleNamespace(add_callback=lambda event, callback: self.callbacks.append(callback))
 
     def __call__(self, prompt, **kwargs):
         self.messages = [
             {"role": "user", "content": [{"text": prompt}]},
             {"role": "assistant", "content": self.result.message["content"]},
         ]
+        for callback in self.callbacks:
+            callback(SimpleNamespace(message=self.messages[-1]))
         return self.result
 
 
@@ -77,15 +81,21 @@ class FakeModel(Model):
 
 
 class FakeMemory:
-    def __init__(self, config):
+    def __init__(self, config, drop_assistant=None):
         self.config = config
         self.memory_client = self
         self.events = []
+        self.drop_assistant = drop_assistant
+        self.assistant_saves = 0
 
     def register_hooks(self, registry):
         registry.add_callback(MessageAddedEvent, self.save_message)
 
     def save_message(self, event):
+        if event.message["role"] == "assistant":
+            self.assistant_saves += 1
+            if self.assistant_saves == self.drop_assistant:
+                return
         converted = AgentCoreMemoryConverter.message_to_payload(
             SessionMessage.from_message(event.message, len(self.events))
         )
@@ -133,10 +143,54 @@ def test_real_agent_limit_saves_and_confirms_partial_reply(monkeypatch, response
     monkeypatch.setattr(conversation, "MAX_MODEL_TURNS", turns)
     monkeypatch.setattr(conversation, "fetch_url", lambda url: {"text": "ok"})
 
-    reply = conversation.generate(message())
-    assert reply == (f"{expected}\n\n{conversation.LIMIT_STOP_NOTICE}" if expected else conversation.LIMIT_STOP_NOTICE)
-    assert conversation._saved_turn(memories[0].events, "Ev1", "Slack user U1: hello", expected.split("\n") if expected else [])
+    if responses == [("max_tokens", [])]:
+        with pytest.raises(conversation.MemoryUnconfirmed):
+            conversation.generate(message())
+    else:
+        reply = conversation.generate(message())
+        assert reply == (f"{expected}\n\n{conversation.LIMIT_STOP_NOTICE}" if expected else conversation.LIMIT_STOP_NOTICE)
+        assistant_messages = [item for item in agents[0].messages if item["role"] == "assistant"]
+        assert conversation._saved_turn(memories[0].events, "Ev1", "Slack user U1: hello", assistant_messages)
     assert agents[0].messages[-1]["role"] == ("assistant" if responses[-1][0] == "max_tokens" else "user")
+
+
+@pytest.mark.parametrize("content", [
+    [{"toolUse": {"toolUseId": "t1", "name": "read_url", "input": {}}}],
+    [{"text": "answer"}],
+])
+def test_real_agent_rejects_dropped_assistant_save(monkeypatch, content):
+    monkeypatch.setenv("MEMORY_ID", "memory-test")
+    monkeypatch.setattr(conversation, "AgentCoreMemorySessionManager", lambda config: FakeMemory(config, drop_assistant=1))
+    responses = [("tool_use", content), ("end_turn", [{"text": "answer"}])] if "toolUse" in content[0] else [("end_turn", content)]
+    monkeypatch.setattr(conversation, "BedrockModel", lambda **kwargs: FakeModel(responses))
+    monkeypatch.setattr(conversation, "fetch_url", lambda url: {"text": "ok"})
+
+    with pytest.raises(conversation.MemoryUnconfirmed):
+        conversation.generate(message())
+
+
+def test_real_agent_confirms_assistants_trimmed_during_invocation(monkeypatch):
+    agents = []
+    responses = [
+        ("tool_use", [{"text": "first"}, {"toolUse": {"toolUseId": "t1", "name": "read_url", "input": {}}}]),
+        ("tool_use", [{"text": "second"}, {"toolUse": {"toolUseId": "t2", "name": "read_url", "input": {}}}]),
+        ("end_turn", [{"text": "answer"}]),
+    ]
+
+    def make_agent(**kwargs):
+        kwargs["conversation_manager"].window_size = 3
+        agent = Agent(**kwargs)
+        agents.append(agent)
+        return agent
+
+    monkeypatch.setenv("MEMORY_ID", "memory-test")
+    monkeypatch.setattr(conversation, "AgentCoreMemorySessionManager", FakeMemory)
+    monkeypatch.setattr(conversation, "BedrockModel", lambda **kwargs: FakeModel(responses))
+    monkeypatch.setattr(conversation, "Agent", make_agent)
+    monkeypatch.setattr(conversation, "fetch_url", lambda url: {"text": "ok"})
+
+    assert conversation.generate(message()) == "answer"
+    assert not any("first" in str(item.get("content")) for item in agents[0].messages)
 
 
 def test_ids_share_thread_across_users_and_isolate_channels(monkeypatch):
@@ -173,9 +227,13 @@ def test_generate_confirms_memory_save_and_uses_budgets(monkeypatch, model_id):
     class Agent:
         def __init__(self, **kwargs):
             calls.append(("agent", kwargs))
+            self.callbacks = []
+            self.hooks = SimpleNamespace(add_callback=lambda event, callback: self.callbacks.append(callback))
 
         def __call__(self, prompt, **kwargs):
             calls.append(("invoke", prompt, kwargs))
+            for callback in self.callbacks:
+                callback(SimpleNamespace(message={"role": "assistant", "content": [{"text": "answer"}]}))
             return SimpleNamespace(
                 stop_reason="end_turn",
                 message={"content": [{"text": "answer"}]},
@@ -209,8 +267,18 @@ def test_saved_turn_reads_converter_payload_and_rejects_other_events():
         memory_event("assistant", [{"text": "wrong"}], event_id="Ev2"),
         memory_event("assistant", [{"text": "answer"}]),
     ]
-    assert conversation._saved_turn(events, "Ev1", "Slack user U1: hello", "answer")
-    assert not conversation._saved_turn(events, "Ev2", "Slack user U1: hello", "answer")
+    assistant = [{"role": "assistant", "content": [{"text": "answer"}]}]
+    assert conversation._saved_turn(events, "Ev1", "Slack user U1: hello", assistant)
+    assert not conversation._saved_turn(events, "Ev2", "Slack user U1: hello", assistant)
+
+
+def test_saved_turn_requires_every_assistant_record_even_without_text():
+    events = [memory_event("user", [{"text": "Slack user U1: hello"}])]
+    assistant = [{"role": "assistant", "content": [{"toolUse": {"toolUseId": "t1", "name": "read_url", "input": {}}}]}]
+    assert not conversation._saved_turn(events, "Ev1", "Slack user U1: hello", assistant)
+
+    repeated = [{"role": "assistant", "content": [{"text": "answer"}]}] * 2
+    assert not conversation._saved_turn(events + [memory_event("assistant", [{"text": "answer"}])], "Ev1", "Slack user U1: hello", repeated)
 
 
 @pytest.mark.parametrize("reason", ["limit_turns", "limit_output_tokens", "limit_total_tokens"])
@@ -243,7 +311,11 @@ def test_limit_stop_returns_partial_text_and_notice_after_memory_confirmation(mo
     )))
 
     expected = f"{text}\n\n{conversation.LIMIT_STOP_NOTICE}" if text else conversation.LIMIT_STOP_NOTICE
-    assert conversation.generate(message()) == expected
+    if text:
+        assert conversation.generate(message()) == expected
+    else:
+        with pytest.raises(conversation.MemoryUnconfirmed):
+            conversation.generate(message())
     assert calls == ["list", "close", "list"]
 
 
@@ -281,12 +353,9 @@ def test_incomplete_memory_save_is_not_accepted(monkeypatch):
 
     monkeypatch.setenv("MEMORY_ID", "memory-test")
     monkeypatch.setattr(conversation, "AgentCoreMemorySessionManager", Memory)
-    monkeypatch.setattr(
-        conversation, "Agent", lambda **kwargs: lambda *args, **kwargs: SimpleNamespace(
-            stop_reason="end_turn", message={"content": [{"text": "answer"}]},
-            metrics=SimpleNamespace(cycles=[1], usage={"outputTokens": 1}, tool_metrics={}),
-        ),
-    )
+    monkeypatch.setattr(conversation, "Agent", lambda **kwargs: MockAgent(SimpleNamespace(
+        stop_reason="end_turn", message={"content": [{"text": "answer"}]},
+    )))
     monkeypatch.setattr(conversation, "BedrockModel", lambda **kwargs: kwargs)
 
     with pytest.raises(conversation.MemoryUnconfirmed):

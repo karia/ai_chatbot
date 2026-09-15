@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from collections import Counter
 
 import boto3
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
@@ -12,6 +13,7 @@ from bedrock_agentcore.memory.integrations.strands.session_manager import AgentC
 from slack_sdk import WebClient
 from strands import Agent, tool
 from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.hooks import MessageAddedEvent
 from strands.models import BedrockModel
 from strands.types.exceptions import MaxTokensReachedException
 
@@ -76,38 +78,38 @@ def _event_role_text(event):
             ]
 
 
-def _saved_turn(events, event_id, prompt, reply):
-    replies = [reply] if isinstance(reply, str) else reply
-    replies = [text for text in replies if text]
-    found = set()
+def _saved_turn(events, event_id, prompt, assistant_messages):
+    replies = Counter(_assistant_texts(assistant_messages))
+    saved_texts = Counter()
+    assistant_count = 0
+    user_saved = False
     for event in events:
         metadata = event.get("metadata", {})
         if metadata.get("event_id", {}).get("stringValue") != event_id:
             continue
         for role, content in _event_role_text(event):
             text = "\n".join(item.strip() for item in content if item.strip())
-            if role == "assistant" and text and text in replies:
-                found.add(text)
+            if role == "assistant":
+                assistant_count += 1
+                if text:
+                    saved_texts[text] += 1
             if role == "user" and content == [prompt]:
-                found.add("user")
-    return "user" in found and all(text in found for text in replies)
+                user_saved = True
+    return user_saved and assistant_count == len(assistant_messages) and not replies - saved_texts
 
 
-def _assistant_texts(agent, prompt):
-    """Read assistant text added after this invocation's user prompt."""
+def _assistant_texts(messages):
+    """Read text from assistant messages captured during this invocation."""
     texts = []
-    for message in reversed(agent.messages):
-        if message.get("role") == "user" and message.get("content") == [{"text": prompt}]:
-            break
-        if message.get("role") == "assistant":
-            text = "\n".join(
-                block["text"].strip() for block in message.get("content", [])
-                if isinstance(block, dict) and isinstance(block.get("text"), str)
-                and block["text"].strip()
-            )
-            if text:
-                texts.append(text)
-    return list(reversed(texts))
+    for message in messages:
+        text = "\n".join(
+            block["text"].strip() for block in message.get("content", [])
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+            and block["text"].strip()
+        )
+        if text:
+            texts.append(text)
+    return texts
 
 
 def _tools(message):
@@ -195,6 +197,12 @@ def generate(message):
         if len(prompt) > MAX_PROMPT_CHARS:
             _record(logging.WARNING, operation="prompt_limit", event_id=message["event_id"])
             prompt = prompt[:MAX_PROMPT_CHARS] + " [truncated]"
+        assistant_messages = []
+        agent.hooks.add_callback(
+            MessageAddedEvent,
+            lambda event: assistant_messages.append(event.message)
+            if event.message.get("role") == "assistant" else None,
+        )
         try:
             result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS})
         except MaxTokensReachedException:
@@ -202,7 +210,7 @@ def generate(message):
         limited = result is None or result.stop_reason.startswith("limit_")
         if result is not None and result.stop_reason != "end_turn" and not limited:
             raise RuntimeError(f"Model stopped: {result.stop_reason}")
-        model_texts = _assistant_texts(agent, prompt) if limited else ["\n".join(
+        model_texts = _assistant_texts(assistant_messages) if limited else ["\n".join(
             block["text"].strip() for block in result.message.get("content", [])
             if isinstance(block, dict) and isinstance(block.get("text"), str)
             and block["text"].strip()
@@ -217,7 +225,7 @@ def generate(message):
             memory_id=config.memory_id, actor_id=actor, session_id=session,
             max_results=MAX_MEMORY_EVENTS, include_payload=True,
         )
-        if not _saved_turn(events, message["event_id"], prompt, model_texts):
+        if not _saved_turn(events, message["event_id"], prompt, assistant_messages):
             raise MemoryUnconfirmed("Memory did not confirm the conversation turn")
         metrics = result.metrics if result is not None else agent.event_loop_metrics
         invocation = metrics.latest_agent_invocation if hasattr(metrics, "latest_agent_invocation") else metrics
