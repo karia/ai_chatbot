@@ -5,7 +5,6 @@ import pytest
 from ingress.events import normalize
 from worker import app, pipeline
 from worker.pipeline import (
-    FIXED_REPLY,
     MAX_MESSAGE_BYTES,
     MESSAGE_FIELDS,
     InvalidMessage,
@@ -14,6 +13,13 @@ from worker.pipeline import (
 )
 from worker.slack_reply import PermanentSlackError, RetryableSlackError
 from worker.store import Conflict, EventExpired, SessionBusy, SessionStopped
+
+TEST_REPLY = "answer"
+
+
+@pytest.fixture(autouse=True)
+def mock_conversation(monkeypatch):
+    monkeypatch.setattr(pipeline, "generate", lambda message: TEST_REPLY)
 
 
 class Context:
@@ -233,14 +239,14 @@ def test_busy_session_is_logged_as_warning_and_retried_without_external_call(
     [
         ({"status": "RUNNING"}, ["acquire", "started", "generated"]),
         (
-            {"status": "GENERATED", "reply": FIXED_REPLY},
+            {"status": "GENERATED", "reply": TEST_REPLY},
             ["acquire"],
         ),
         (
             {
                 "status": "POSTING",
-                "reply": FIXED_REPLY,
-                "slack_parts": [{"end": len(FIXED_REPLY), "ts": "1.0"}],
+                "reply": TEST_REPLY,
+                "slack_parts": [{"end": len(TEST_REPLY), "ts": "1.0"}],
             },
             ["acquire"],
         ),
@@ -264,6 +270,29 @@ def test_interrupted_execution_is_isolated_without_posting(message):
 
     assert [call[0] for call in store.calls] == ["acquire", "needs_review"]
     assert store.calls[-1][1] == "execution_unknown"
+    assert adapter.calls == []
+
+
+def test_memory_failure_never_marks_generated(message, monkeypatch):
+    store = Store()
+    adapter = Adapter()
+    def fail(_):
+        raise TimeoutError("Memory timed out")
+    monkeypatch.setattr(pipeline, "generate", fail)
+
+    with pytest.raises(TimeoutError):
+        process(sqs(message), Context(), store, adapter)
+    assert [call[0] for call in store.calls] == ["acquire", "started"]
+    assert adapter.calls == []
+
+
+def test_answer_limit_stops_before_model(message, monkeypatch):
+    store = Store({"status": "RUNNING", "answer_count": 50})
+    adapter = Adapter()
+    monkeypatch.setattr(pipeline, "generate", lambda _: pytest.fail("model invoked"))
+
+    assert process(sqs(message), Context(), store, adapter) == "isolated"
+    assert [call[0] for call in store.calls] == ["acquire", "needs_review"]
     assert adapter.calls == []
 
 
@@ -388,6 +417,7 @@ def test_packaged_handler_imports(tmp_path):
     source = Path(__file__).resolve().parents[3] / "src" / "worker"
     for path in source.glob("*.py"):
         shutil.copy(path, tmp_path)
+    shutil.copytree(source / "tools", tmp_path / "tools")
 
     result = subprocess.run(
         [sys.executable, "-c", "import app; assert callable(app.lambda_handler)"],

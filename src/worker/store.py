@@ -158,6 +158,7 @@ class Store:
         item = {
             **(previous or {"pk": pk, "status": "RUNNING", "expires_at": expires_at}),
             "session_pk": updated_session["pk"],
+            "answer_count": updated_session["answer_count"],
             "owner": owner,
             "attempt": previous["attempt"] + 1 if previous else 1,
             "lease_until": now + LEASE_SECONDS,

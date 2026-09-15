@@ -6,14 +6,15 @@ import re
 import time
 
 if __package__:
+    from .conversation import generate
     from .slack_reply import PermanentSlackError, SlackReplyAdapter
     from .store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 else:
+    from conversation import generate
     from slack_reply import PermanentSlackError, SlackReplyAdapter
     from store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 
 
-FIXED_REPLY = "（応答生成は準備中です）"
 MIN_REMAINING_MS = 5_000
 MAX_MESSAGE_BYTES = 128 * 1024
 MESSAGE_FIELDS = {
@@ -200,12 +201,21 @@ def process(event, context, store=None, adapter=None):
             return "isolated"
         if "phase" in saved:
             raise Conflict("Unknown execution phase")
+        if saved.get("answer_count", 0) >= 50:
+            _stage(
+                "needs_review", event_id, context,
+                lambda: store.needs_review(saved, "answer_limit"),
+            )
+            return "isolated"
         saved = _stage("started", event_id, context, lambda: store.started(saved))
+        reply = _stage(
+            "conversation", event_id, context, lambda: generate(message)
+        )
         saved = _stage(
             "generated",
             event_id,
             context,
-            lambda: store.generated(saved, FIXED_REPLY),
+            lambda: store.generated(saved, reply),
         )
     elif saved["status"] not in {"GENERATED", "POSTING"}:
         raise Conflict("Unknown event status")
