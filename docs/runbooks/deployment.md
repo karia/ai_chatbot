@@ -35,7 +35,7 @@ TF_DATA_DIR="$PWD/terraform/.terraform-prod" mise exec -- terraform -chdir=terra
 デプロイロール自身、OIDC provider、権限境界の変更は管理者の認証情報で適用する。
 API GatewayのIDとイベントソースのタグ操作対象をIAMポリシーに固定しているため、これらのリソースの置き換えも管理者が行う。
 アプリ用IAMロールの権限境界を外す権限もCIには与えていないため、ロールの置き換え・削除は管理者が行う。
-Bedrockのモデル許可を変更するときは、同じ`TF_VAR_bedrock_resource_arns`を管理者の適用とGitHub変数の両方へ渡す。
+Bedrockのモデル許可を変更するときは、同じ`TF_VAR_bedrock_resource_arns`を管理者の適用とGitHub Secretの両方へ渡す。
 
 ### GitHub
 
@@ -45,23 +45,18 @@ prodにはRequired reviewersを設定し、Prevent self-reviewを有効にする
 管理者による保護ルールの迂回も無効にする。
 Environmentの承認設定はworkflowファイルでは作成されないため、自動デプロイを有効にする前に設定する。
 
-必要なActions変数は次のとおり。
-
-| 変数 | 設定先 | 値の意味 |
-| --- | --- | --- |
-| `BEDROCK_RESOURCE_ARNS` | 各Environment | 許可するモデル・Inference Profileの具体的なARNを並べたJSON配列。省略時は`[]` |
-
 必要なGitHub Secretsは次のとおり。
 
 | シークレット | 設定先 | 値の意味 |
 | --- | --- | --- |
 | `TF_STATE_BUCKET` | リポジトリ | 既存のstate保存用S3バケット名。両環境で共通 |
 | `AWS_DEPLOY_ROLE_ARN` | 各Environment | その環境のTerraform出力`deploy_role_arn` |
+| `BEDROCK_RESOURCE_ARNS` | 各Environment | 許可するモデル・Inference Profileの具体的なARNを並べたJSON配列。省略時は`[]` |
 | `SLACK_TEAM_ID` | 各Environment | 受付が受理するSlackワークスペースのID |
 | `SLACK_API_APP_ID` | 各Environment | 受付が受理するSlackアプリのID |
 | `SLACK_SIGNING_SECRET` | 各Environment | 受付が署名検証に使うSigning Secret |
 
-4つの識別子は資格情報ではないが、公開しない方針のためGitHub Secretsに置き、公開ログではGitHub Actionsの自動マスクを適用する。
+Signing Secret以外の識別子は資格情報ではないが、公開しない方針のためGitHub Secretsに置き、公開ログではGitHub Actionsの自動マスクを適用する。
 
 AWSの長期アクセスキーは登録しない。
 ワーカーが使うBot TokenはSecrets Managerに保存し、Lambdaへは参照先だけを渡す。
