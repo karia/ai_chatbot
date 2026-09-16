@@ -18,9 +18,11 @@ from strands.models import BedrockModel
 from strands.types.exceptions import MaxTokensReachedException
 
 if __package__:
+    from .observability import emit
     from .tools.attachments import MAX_ATTACHMENTS, fetch_attachments
     from .tools.url import fetch_url
 else:
+    from observability import emit
     from tools.attachments import MAX_ATTACHMENTS, fetch_attachments
     from tools.url import fetch_url
 
@@ -51,11 +53,30 @@ def memory_ids(message):
 
 
 def _record(level, **fields):
-    threshold = logging.getLevelNamesMapping().get(
-        os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO
+    event_id = fields.pop("event_id", "unknown")
+    emit(
+        "conversation",
+        level,
+        correlation_id=event_id,
+        state=fields.get("operation"),
+        event_id=event_id,
+        **fields,
     )
-    if level >= threshold:
-        print(json.dumps({"level": logging.getLevelName(level), "component": "conversation", **fields}), flush=True)
+
+
+def _observed(service, operation):
+    try:
+        return operation()
+    except Exception as error:
+        code = getattr(error, "response", {}).get("Error", {}).get("Code", "")
+        if "throttl" in f"{code}{type(error).__name__}".lower():
+            _record(
+                logging.WARNING,
+                operation="service_throttled",
+                service=service,
+                error_class=type(error).__name__,
+            )
+        raise
 
 
 def _event_role_text(event):
@@ -114,6 +135,7 @@ def _assistant_texts(messages):
 
 def _tools(message):
     calls = 0
+    event_id = message["event_id"]
 
     @tool
     def read_url(url: str) -> dict:
@@ -121,14 +143,31 @@ def _tools(message):
         nonlocal calls
         calls += 1
         if calls > MAX_TOOL_CALLS:
-            _record(logging.WARNING, operation="tool_limit", tool="read_url")
+            _record(
+                logging.WARNING,
+                operation="tool_limit",
+                event_id=event_id,
+                tool_name="read_url",
+            )
             return {"error": "tool_limit"}
         result = fetch_url(url)
         text = result["text"]
         if len(text) > MAX_TOOL_TEXT_CHARS:
-            _record(logging.WARNING, operation="tool_text_limit", tool="read_url")
+            _record(
+                logging.WARNING,
+                operation="tool_text_limit",
+                event_id=event_id,
+                tool_name="read_url",
+            )
             result = {**result, "text": text[:MAX_TOOL_TEXT_CHARS] + " [truncated]"}
-        _record(logging.INFO, operation="tool_result", tool="read_url", text=result["text"][:1000], text_truncated=len(result["text"]) > 1000)
+        _record(
+            logging.INFO,
+            operation="tool_result",
+            event_id=event_id,
+            tool_name="read_url",
+            text=result["text"][:1000],
+            text_truncated=len(result["text"]) > 1000,
+        )
         return result
 
     @tool
@@ -137,7 +176,12 @@ def _tools(message):
         nonlocal calls
         calls += 1
         if calls > MAX_TOOL_CALLS:
-            _record(logging.WARNING, operation="tool_limit", tool="read_attachments")
+            _record(
+                logging.WARNING,
+                operation="tool_limit",
+                event_id=event_id,
+                tool_name="read_attachments",
+            )
             return [{"error": "tool_limit"}]
         if len(message["file_ids"]) > MAX_ATTACHMENTS:
             return [{"error": "attachment_limit"}]
@@ -155,9 +199,21 @@ def _tools(message):
         for item in results:
             item["text"] = item["text"].replace(token, "[REDACTED]")
             if len(item["text"]) > MAX_TOOL_TEXT_CHARS // 3:
-                _record(logging.WARNING, operation="tool_text_limit", tool="read_attachments")
+                _record(
+                    logging.WARNING,
+                    operation="tool_text_limit",
+                    event_id=event_id,
+                    tool_name="read_attachments",
+                )
                 item["text"] = item["text"][:MAX_TOOL_TEXT_CHARS // 3] + " [truncated]"
-        _record(logging.INFO, operation="tool_result", tool="read_attachments", attachments=len(results), text=" ".join(item["text"] for item in results)[:1000])
+        _record(
+            logging.INFO,
+            operation="tool_result",
+            event_id=event_id,
+            tool_name="read_attachments",
+            attachments=len(results),
+            text=" ".join(item["text"] for item in results)[:1000],
+        )
         return results
 
     return [read_url, read_attachments] if message["file_ids"] else [read_url]
@@ -174,9 +230,12 @@ def generate(message):
     manager = AgentCoreMemorySessionManager(config)
     closed = False
     try:
-        manager.memory_client.list_events(
-            memory_id=config.memory_id, actor_id=actor, session_id=session,
-            max_results=MAX_MEMORY_EVENTS, include_payload=False,
+        _observed(
+            "memory",
+            lambda: manager.memory_client.list_events(
+                memory_id=config.memory_id, actor_id=actor, session_id=session,
+                max_results=MAX_MEMORY_EVENTS, include_payload=False,
+            ),
         )
         model = BedrockModel(
             model_id=os.getenv("BEDROCK_MODEL_ID", MODEL_ID), max_tokens=MAX_OUTPUT_TOKENS
@@ -202,7 +261,10 @@ def generate(message):
             if event.message.get("role") == "assistant" else None,
         )
         try:
-            result = agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS})
+            result = _observed(
+                "bedrock",
+                lambda: agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS}),
+            )
         except MaxTokensReachedException:
             result = None
         limited = result is None or result.stop_reason.startswith("limit_")
@@ -218,10 +280,13 @@ def generate(message):
             raise RuntimeError("Model returned no text")
         reply = f"{model_text}\n\n{LIMIT_STOP_NOTICE}" if model_text and limited else LIMIT_STOP_NOTICE if limited else model_text
         closed = True
-        manager.close()
-        events = manager.memory_client.list_events(
-            memory_id=config.memory_id, actor_id=actor, session_id=session,
-            max_results=MAX_MEMORY_EVENTS, include_payload=True,
+        _observed("memory", manager.close)
+        events = _observed(
+            "memory",
+            lambda: manager.memory_client.list_events(
+                memory_id=config.memory_id, actor_id=actor, session_id=session,
+                max_results=MAX_MEMORY_EVENTS, include_payload=True,
+            ),
         )
         if not _saved_turn(events, message["event_id"], prompt, assistant_messages):
             raise MemoryUnconfirmed("Memory did not confirm the conversation turn")
@@ -232,6 +297,7 @@ def generate(message):
             duration_ms=round((time.monotonic() - started) * 1000, 3),
             model_calls=len(invocation.cycles),
             tool_calls=sum(item.call_count for item in metrics.tool_metrics.values()),
+            input_tokens=invocation.usage.get("inputTokens", 0),
             output_tokens=invocation.usage.get("outputTokens", 0),
             model_input=prompt[:1000], model_input_truncated=len(prompt) > 1000,
             model_output=reply[:1000], model_output_truncated=len(reply) > 1000,
@@ -239,5 +305,5 @@ def generate(message):
         return reply
     except Exception:
         if not closed:
-            manager.close()
+            _observed("memory", manager.close)
         raise

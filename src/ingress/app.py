@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 
 import boto3
@@ -17,6 +18,16 @@ else:
 
 
 MAX_MESSAGE_BYTES = 128 * 1024
+LOG_FIELD_LIMIT = 1_000
+SENSITIVE_FIELDS = {
+    "authorization",
+    "auth_header",
+    "headers",
+    "secret",
+    "signature",
+    "signing_secret",
+    "token",
+}
 
 _clients = {}
 
@@ -44,18 +55,43 @@ def _signing_secret():
 def _respond(status, state, started, *, body="", level="INFO", **fields):
     levels = logging.getLevelNamesMapping()
     if levels[level] >= levels.get(os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO):
-        for key, value in fields.items():
-            if isinstance(value, str) and len(value) > 1024:
-                fields[key] = value[:1013] + "[truncated]"
+        fields = {
+            key: _safe_log_value(value)
+            for key, value in fields.items()
+            if not _sensitive_field(key)
+        }
         print(json.dumps({
             "level": level,
             "component": "ingress",
             "state": state,
+            "correlation_id": fields.get("event_id", "unknown"),
             "status_code": status,
             "duration_ms": round((time.monotonic() - started) * 1000, 3),
             **fields,
         }))
     return {"statusCode": status, "headers": {"content-type": "application/json"}, "body": body}
+
+
+def _sensitive_field(key):
+    normalized = key.lower().replace("-", "_")
+    return normalized in SENSITIVE_FIELDS or normalized.endswith(
+        ("_secret", "_signature", "_token")
+    )
+
+
+def _safe_log_value(value):
+    if not isinstance(value, str):
+        return value
+    value = re.sub(
+        r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,}\"']+",
+        r"\1[REDACTED]",
+        value,
+    )
+    value = re.sub(r"v0=[0-9a-fA-F]{64}", "[REDACTED]", value)
+    value = re.sub(r"xox[baprs]-[A-Za-z0-9-]+", "[REDACTED]", value)
+    if len(value) > LOG_FIELD_LIMIT:
+        value = value[: LOG_FIELD_LIMIT - len("[truncated]")] + "[truncated]"
+    return value
 
 
 def lambda_handler(event, context):

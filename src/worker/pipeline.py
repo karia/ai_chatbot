@@ -1,16 +1,17 @@
 import hashlib
 import json
 import logging
-import os
 import re
 import time
 
 if __package__:
     from .conversation import MAX_ANSWERS_PER_THREAD, generate
+    from .observability import emit
     from .slack_reply import PermanentSlackError, SlackReplyAdapter
     from .store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 else:
     from conversation import MAX_ANSWERS_PER_THREAD, generate
+    from observability import emit
     from slack_reply import PermanentSlackError, SlackReplyAdapter
     from store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 
@@ -38,22 +39,14 @@ class InvalidMessage(Exception):
 
 
 def _log(level, state, event_id="unknown", **fields):
-    threshold = logging.getLevelNamesMapping().get(
-        os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
+    emit(
+        "worker",
+        level,
+        state=state,
+        event_id=event_id,
+        correlation_id=event_id,
+        **fields,
     )
-    if level >= threshold:
-        print(
-            json.dumps(
-                {
-                    "level": logging.getLevelName(level),
-                    "component": "worker",
-                    "state": state,
-                    "event_id": event_id[:1024],
-                    **fields,
-                }
-            ),
-            flush=True,
-        )
 
 
 def _string(value):
@@ -130,7 +123,7 @@ def _stage(name, event_id, context, operation):
             event_id,
             stage=name,
             duration_ms=round((time.monotonic() - started) * 1000, 3),
-            error=type(error).__name__,
+            error_class=type(error).__name__,
         )
         raise
     _log(
@@ -181,7 +174,12 @@ def process(event, context, store=None, adapter=None):
             ),
         )
     except SessionStopped:
-        _log(logging.ERROR, "session_stopped", event_id)
+        _log(
+            logging.ERROR,
+            "session_stopped",
+            event_id,
+            error_class="SessionStopped",
+        )
         raise
     except SessionBusy:
         _log(logging.WARNING, "session_busy", event_id)

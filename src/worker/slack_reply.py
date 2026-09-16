@@ -1,6 +1,5 @@
 """Slack thread reply delivery with persisted post boundaries."""
 
-import json
 import logging
 import math
 import os
@@ -11,8 +10,10 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError, SlackRequestError
 
 if __package__:
+    from .observability import emit
     from .store import PostingSlotUnavailable, Store
 else:
+    from observability import emit
     from store import PostingSlotUnavailable, Store
 
 
@@ -30,25 +31,16 @@ class PermanentSlackError(Exception):
     """Slack delivery was isolated and must not be retried automatically."""
 
 
-def _level_enabled(level):
-    threshold = logging.getLevelNamesMapping().get(
-        os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
+def _log(level, operation, *, secret_values=(), **fields):
+    fields.setdefault("correlation_id", "unknown")
+    emit(
+        "slack_reply",
+        level,
+        secret_values=secret_values,
+        state=operation,
+        operation=operation,
+        **fields,
     )
-    return level >= threshold
-
-
-def _log(level, operation, **fields):
-    if _level_enabled(level):
-        print(
-            json.dumps(
-                {
-                    "level": logging.getLevelName(level),
-                    "operation": operation,
-                    **fields,
-                }
-            ),
-            flush=True,
-        )
 
 
 def _retry_after(headers):
@@ -82,12 +74,14 @@ class SlackReplyAdapter:
         _log(
             logging.INFO,
             operation,
-            text=text[:LOG_FIELD_LIMIT],
+            secret_values=(token,),
+            text=text,
             text_truncated=len(text) > LOG_FIELD_LIMIT,
             **fields,
         )
 
     def _call(self, method, event, context, **kwargs):
+        correlation_id = event.get("pk", "unknown").rsplit("#", 1)[-1]
         for attempt in range(2):
             try:
                 return method(**kwargs)
@@ -104,6 +98,8 @@ class SlackReplyAdapter:
                             logging.WARNING,
                             "slack_rate_limited",
                             retry_after=retry_after,
+                            error_class=type(error).__name__,
+                            correlation_id=correlation_id,
                         )
                         self.sleep(retry_after)
                         continue
@@ -112,12 +108,23 @@ class SlackReplyAdapter:
                     )
                     raise RetryableSlackError("Slack rate limited the request") from error
                 if status >= 500:
-                    _log(logging.WARNING, "slack_retryable_failure", status=status)
+                    _log(
+                        logging.WARNING,
+                        "slack_retryable_failure",
+                        status=status,
+                        error_class=type(error).__name__,
+                        correlation_id=correlation_id,
+                    )
                     raise RetryableSlackError("Slack failed temporarily") from error
                 self.event = self.store.needs_review(event, "slack_permanent")
                 raise PermanentSlackError("Slack rejected the post") from error
             except SlackRequestError as error:
-                _log(logging.WARNING, "slack_response_unavailable")
+                _log(
+                    logging.WARNING,
+                    "slack_response_unavailable",
+                    error_class=type(error).__name__,
+                    correlation_id=correlation_id,
+                )
                 raise RetryableSlackError("Slack response was unavailable") from error
         raise AssertionError("Slack retry loop exhausted")
 
@@ -135,6 +142,7 @@ class SlackReplyAdapter:
             raise PermanentSlackError("Slack post result is unknown")
 
         start = 0
+        correlation_id = event.get("pk", "unknown").rsplit("#", 1)[-1]
         for index, part in enumerate(event["slack_parts"]):
             end = int(part["end"])
             text = event["reply"][start:end]
@@ -167,12 +175,15 @@ class SlackReplyAdapter:
                             "posting_slot_wait",
                             attempt=attempt + 1,
                             wait=wait,
+                            correlation_id=correlation_id,
                         )
                         self.sleep(wait)
                         continue
                     raise
             self.event = event
-            self._log_text("slack_post", text, part=index)
+            self._log_text(
+                "slack_post", text, part=index, correlation_id=correlation_id
+            )
             response = self._call(
                 self.client.chat_postMessage,
                 event,

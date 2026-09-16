@@ -241,7 +241,10 @@ def test_posting_slot_waits_and_retries_once_with_reserve_remaining(capsys):
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert records[0] == {
         "level": "WARNING",
+        "component": "slack_reply",
+        "state": "posting_slot_wait",
         "operation": "posting_slot_wait",
+        "correlation_id": "unknown",
         "attempt": 1,
         "wait": 1.0,
     }

@@ -216,6 +216,7 @@ def test_structured_logging_and_level(aws, payload, monkeypatch, capsys, level, 
     assert bool(output) == logged
     assert SECRET not in output
     assert event["headers"]["X-Slack-Signature"] not in output
+    assert "Authorization" not in output
     if logged:
         record = json.loads(output)
         assert record["state"] == "queued"
@@ -238,6 +239,30 @@ def test_log_fields_are_bounded(aws, payload, capsys):
     record = json.loads(capsys.readouterr().out)
     assert len(record["event_id"]) <= 1024
     assert record["event_id"].endswith("[truncated]")
+
+
+def test_log_boundary_removes_sensitive_fields_and_values(aws, capsys):
+    app._respond(
+        500,
+        "failed",
+        0,
+        authorization="Bearer private-auth-value",
+        x_slack_signature="v0=" + "b" * 64,
+        access_token="xoxb-private-access-token",
+        signature="v0=" + "a" * 64,
+        secret=SECRET,
+        detail="Authorization: Bearer nested-auth-value",
+    )
+
+    output = capsys.readouterr().out
+    record = json.loads(output)
+    assert "authorization" not in record
+    assert "x_slack_signature" not in record
+    assert "access_token" not in record
+    assert "signature" not in record
+    assert "secret" not in record
+    assert "private-auth-value" not in output
+    assert "nested-auth-value" not in output
 
 
 def test_signed_invalid_json(aws):
