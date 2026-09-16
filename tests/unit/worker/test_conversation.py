@@ -254,7 +254,7 @@ def test_generate_confirms_memory_save_and_uses_budgets(monkeypatch, model_id):
     assert calls[-2] == ("close",)
     agent = next(call[1] for call in calls if call[0] == "agent")
     assert agent["agent_id"] == "conversation"
-    assert len(agent["tools"]) == 2
+    assert len(agent["tools"]) == 1
     assert agent["model"]["model_id"] == model_id
     assert agent["model"]["max_tokens"] == conversation.MAX_OUTPUT_TOKENS
     invoke = next(call for call in calls if call[0] == "invoke")
@@ -401,14 +401,22 @@ def test_tool_budget_bounds_external_reads(monkeypatch):
     assert "tool_limit" in str(results[-1])
 
 
+@pytest.mark.parametrize(("file_ids", "names"), [
+    ([], ["read_url"]),
+    (["F1"], ["read_url", "read_attachments"]),
+])
+def test_tools_match_available_inputs(file_ids, names):
+    assert [item.tool_name for item in conversation._tools(message(file_ids=file_ids))] == names
+
+
 def test_url_and_attachment_reads_share_tool_budget(monkeypatch):
     reads = []
     monkeypatch.setattr(conversation, "fetch_url", lambda url: reads.append(url) or {"text": "ok"})
-    url_tool, attachment_tool = conversation._tools(message())
+    url_tool, attachment_tool = conversation._tools(message(file_ids=["F1"]))
 
     async def invoke():
         results = []
-        for index, selected in enumerate([url_tool, attachment_tool, url_tool, attachment_tool]):
+        for index, selected in enumerate([url_tool, url_tool, url_tool, attachment_tool]):
             tool_input = {"url": "https://example.com"} if selected is url_tool else {}
             async for result in selected.stream(
                 {"toolUseId": str(index), "name": selected.tool_name, "input": tool_input}, {}
@@ -417,7 +425,7 @@ def test_url_and_attachment_reads_share_tool_budget(monkeypatch):
         return results
 
     results = asyncio.run(invoke())
-    assert len(reads) == 2
+    assert len(reads) == 3
     assert "tool_limit" not in str(results[2])
     assert "tool_limit" in str(results[-1])
 
