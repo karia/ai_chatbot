@@ -53,6 +53,39 @@ run "initial_settings" {
     )
     error_message = "FIFO ordering, storage keys and retention must match the application contract."
   }
+
+  assert {
+    condition = (
+      aws_sns_topic.alarms.name == "ai-chatbot-dev-alarms" &&
+      alltrue([for alarm in aws_cloudwatch_metric_alarm.monitoring : length(alarm.alarm_actions) == 1]) &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].extended_statistic == "p99" &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].threshold == 2000 &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-5xx"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["queue-age"].threshold == 300 &&
+      aws_cloudwatch_metric_alarm.monitoring["dlq-messages"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["needs-review"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["lambda-timeouts"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["session-stopped"].threshold == 1
+    )
+    error_message = "Monitoring alarms must preserve ADR-001 thresholds and share one SNS topic."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_log_metric_filter.needs_review.pattern == "{ $.status = \"NEEDS_REVIEW\" }" &&
+      aws_cloudwatch_log_metric_filter.session_stopped.pattern == "{ $.state = \"session_stopped\" }" &&
+      aws_cloudwatch_log_metric_filter.lambda_timeout.pattern == "{ ($.state = \"budget_exhausted\") || ($.error_class = \"TimeoutError\") }" &&
+      aws_cloudwatch_log_metric_filter.service_throttled.pattern == "{ $.operation = \"service_throttled\" }"
+    )
+    error_message = "Structured log filters must measure isolation, timeout and throttling events."
+  }
+
+  assert {
+    condition = alltrue([
+      for config in values(output.app_config) : config.TracingConfig.Mode == "PassThrough"
+    ])
+    error_message = "Lambda tracing must not automatically collect model input or output."
+  }
 }
 
 run "global_bedrock_arns" {
