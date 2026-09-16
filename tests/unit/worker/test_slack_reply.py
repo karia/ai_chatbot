@@ -106,21 +106,57 @@ def test_empty_reply_is_isolated_without_calling_slack(reply):
     assert client.calls == []
 
 
+def test_post_uses_markdown_text():
+    client = Client({"ts": "1.0"})
+    reply = "**bold**\n\n- item"
+
+    SlackReplyAdapter(store=Store(), client=client).send(
+        event(reply), "T", "C", "root", Context(10_000)
+    )
+
+    assert client.calls == [
+        (
+            "post",
+            {"channel": "C", "thread_ts": "root", "markdown_text": reply},
+        )
+    ]
+
+
+def test_markdown_text_is_split_at_12_000_characters():
+    client = Client({"ts": "1.0"}, {"ts": "2.0"})
+    reply = "a" * 12_000 + "b"
+
+    SlackReplyAdapter(store=Store(), client=client, sleep=lambda _: None).send(
+        event(reply), "T", "C", "root", Context(10_000)
+    )
+
+    assert client.calls == [
+        (
+            "post",
+            {"channel": "C", "thread_ts": "root", "markdown_text": "a" * 12_000},
+        ),
+        (
+            "post",
+            {"channel": "C", "thread_ts": "root", "markdown_text": "b"},
+        ),
+    ]
+
+
 def test_post_disconnect_is_not_reposted_and_is_isolated_on_resume():
     store = Store()
     client = Client({"ts": "1.0"}, SlackRequestError("response lost"))
     sleeps = []
     adapter = SlackReplyAdapter(store=store, client=client, sleep=sleeps.append)
-    reply = "a" * 80_001
+    reply = "a" * 24_001
 
     with pytest.raises(RetryableSlackError):
         adapter.send(event(reply), "T", "C", "root", Context(10_000))
 
     interrupted = adapter.event
     assert interrupted["slack_parts"] == [
-        {"end": 40_000, "ts": "1.0"},
-        {"end": 80_000},
-        {"end": 80_001},
+        {"end": 12_000, "ts": "1.0"},
+        {"end": 24_000},
+        {"end": 24_001},
     ]
     assert interrupted["posting_part"] == 1
     with pytest.raises(PermanentSlackError):
@@ -133,9 +169,9 @@ def test_post_disconnect_is_not_reposted_and_is_isolated_on_resume():
     assert sleeps == [1]
 
 
-def test_resume_skips_multiple_known_posts_and_only_posts_missing_parts():
+def test_resume_updates_known_posts_and_only_posts_missing_parts():
     store = Store()
-    client = Client({"ts": "3.0"})
+    client = Client({}, {}, {"ts": "3.0"})
     interrupted = event(
         "abcdefghijkl",
         status="POSTING",
@@ -151,7 +187,12 @@ def test_resume_skips_multiple_known_posts_and_only_posts_missing_parts():
     )
 
     assert client.calls == [
-        ("post", {"channel": "C", "thread_ts": "root", "text": "ijkl"})
+        ("update", {"channel": "C", "ts": "1.0", "markdown_text": "abcd"}),
+        ("update", {"channel": "C", "ts": "2.0", "markdown_text": "efgh"}),
+        (
+            "post",
+            {"channel": "C", "thread_ts": "root", "markdown_text": "ijkl"},
+        ),
     ]
     assert store.event["slack_ts"] == "3.0"
 
