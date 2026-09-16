@@ -16,7 +16,7 @@ else:
     from store import PostingSlotUnavailable, Store
 
 
-MESSAGE_LIMIT = 40_000
+MESSAGE_LIMIT = 12_000
 LOG_FIELD_LIMIT = 1_000
 DEFAULT_RETRY_AFTER = 3
 MIN_REMAINING_MS = 5_000
@@ -87,10 +87,10 @@ class SlackReplyAdapter:
             **fields,
         )
 
-    def _call(self, event, context, **kwargs):
+    def _call(self, method, event, context, **kwargs):
         for attempt in range(2):
             try:
-                return self.client.chat_postMessage(**kwargs)
+                return method(**kwargs)
             except SlackApiError as error:
                 status = error.response.status_code
                 if status == 429:
@@ -110,7 +110,7 @@ class SlackReplyAdapter:
                     self.event = self.store.defer_post(
                         event, self.now() + retry_after
                     )
-                    raise RetryableSlackError("Slack rate limited the post") from error
+                    raise RetryableSlackError("Slack rate limited the request") from error
                 if status >= 500:
                     _log(logging.WARNING, "slack_retryable_failure", status=status)
                     raise RetryableSlackError("Slack failed temporarily") from error
@@ -140,6 +140,16 @@ class SlackReplyAdapter:
             text = event["reply"][start:end]
             start = end
             if "ts" in part:
+                self.event = event
+                self._log_text("slack_update", text, part=index)
+                self._call(
+                    self.client.chat_update,
+                    event,
+                    context,
+                    channel=channel,
+                    ts=part["ts"],
+                    markdown_text=text,
+                )
                 continue
             for attempt in range(10):
                 try:
@@ -164,11 +174,12 @@ class SlackReplyAdapter:
             self.event = event
             self._log_text("slack_post", text, part=index)
             response = self._call(
+                self.client.chat_postMessage,
                 event,
                 context,
                 channel=channel,
                 thread_ts=thread_ts,
-                text=text,
+                markdown_text=text,
             )
             event = self.store.posted(event, index, response["ts"])
             self.event = event
