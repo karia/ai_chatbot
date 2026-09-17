@@ -64,7 +64,7 @@ def _record(level, **fields):
     )
 
 
-def _observed(service, operation):
+def _observed(service, operation, event_id="unknown"):
     try:
         return operation()
     except Exception as error:
@@ -75,6 +75,7 @@ def _observed(service, operation):
                 operation="service_throttled",
                 service=service,
                 error_class=type(error).__name__,
+                event_id=event_id,
             )
         raise
 
@@ -236,6 +237,7 @@ def generate(message):
                 memory_id=config.memory_id, actor_id=actor, session_id=session,
                 max_results=MAX_MEMORY_EVENTS, include_payload=False,
             ),
+            message["event_id"],
         )
         model = BedrockModel(
             model_id=os.getenv("BEDROCK_MODEL_ID", MODEL_ID), max_tokens=MAX_OUTPUT_TOKENS
@@ -264,6 +266,7 @@ def generate(message):
             result = _observed(
                 "bedrock",
                 lambda: agent(prompt, limits={"turns": MAX_MODEL_TURNS, "output_tokens": MAX_OUTPUT_TOKENS * MAX_MODEL_TURNS}),
+                message["event_id"],
             )
         except MaxTokensReachedException:
             result = None
@@ -280,13 +283,14 @@ def generate(message):
             raise RuntimeError("Model returned no text")
         reply = f"{model_text}\n\n{LIMIT_STOP_NOTICE}" if model_text and limited else LIMIT_STOP_NOTICE if limited else model_text
         closed = True
-        _observed("memory", manager.close)
+        _observed("memory", manager.close, message["event_id"])
         events = _observed(
             "memory",
             lambda: manager.memory_client.list_events(
                 memory_id=config.memory_id, actor_id=actor, session_id=session,
                 max_results=MAX_MEMORY_EVENTS, include_payload=True,
             ),
+            message["event_id"],
         )
         if not _saved_turn(events, message["event_id"], prompt, assistant_messages):
             raise MemoryUnconfirmed("Memory did not confirm the conversation turn")
@@ -305,5 +309,5 @@ def generate(message):
         return reply
     except Exception:
         if not closed:
-            _observed("memory", manager.close)
+            _observed("memory", manager.close, message["event_id"])
         raise

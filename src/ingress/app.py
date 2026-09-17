@@ -104,12 +104,12 @@ def lambda_handler(event, context):
         else:
             body = body.encode("utf-8")
         headers = {key.lower(): value for key, value in (event.get("headers") or {}).items()}
-    except (ValueError, TypeError, AttributeError):
-        return _respond(400, "invalid_payload", started, level="WARN")
+    except (ValueError, TypeError, AttributeError) as error:
+        return _respond(400, "invalid_payload", started, level="WARN", error_class=type(error).__name__)
     try:
         secret = _signing_secret()
-    except KeyError:
-        return _respond(503, "invalid_configuration", started, level="ERROR")
+    except KeyError as error:
+        return _respond(503, "invalid_configuration", started, level="ERROR", error_class=type(error).__name__)
     if not verify(body, headers, secret, now):
         return _respond(401, "invalid_signature", started, level="WARN")
     try:
@@ -128,10 +128,10 @@ def lambda_handler(event, context):
             return _respond(200, "ignored", started)
         message_body = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
         message_bytes = len(message_body.encode("utf-8"))
-    except (ValueError, RecursionError):
-        return _respond(400, "invalid_payload", started, level="WARN")
-    except KeyError:
-        return _respond(503, "invalid_configuration", started, level="ERROR")
+    except (ValueError, RecursionError) as error:
+        return _respond(400, "invalid_payload", started, level="WARN", error_class=type(error).__name__)
+    except KeyError as error:
+        return _respond(503, "invalid_configuration", started, level="ERROR", error_class=type(error).__name__)
     fields = {"event_id": message["event_id"], "message_bytes": message_bytes}
     if message_bytes > MAX_MESSAGE_BYTES:
         return _respond(413, "oversized", started, level="WARN", oversized_count=1, **fields)
@@ -143,9 +143,9 @@ def lambda_handler(event, context):
             MessageDeduplicationId=fifo_id(message["team_id"], message["event_id"]),
         )
         if not result or not result.get("MessageId"):
-            return _respond(503, "queue_failed", started, level="ERROR", **fields)
-    except KeyError:
-        return _respond(503, "invalid_configuration", started, level="ERROR", **fields)
-    except (BotoCoreError, ClientError):
-        return _respond(503, "queue_failed", started, level="ERROR", **fields)
+            return _respond(503, "queue_failed", started, level="ERROR", error_class="MissingMessageId", **fields)
+    except KeyError as error:
+        return _respond(503, "invalid_configuration", started, level="ERROR", error_class=type(error).__name__, **fields)
+    except (BotoCoreError, ClientError) as error:
+        return _respond(503, "queue_failed", started, level="ERROR", error_class=type(error).__name__, **fields)
     return _respond(200, "queued", started, **fields)

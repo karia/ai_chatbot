@@ -49,13 +49,12 @@ def _now():
 
 def _log(level, operation, item=None, **fields):
     record = {"operation": operation, **fields}
+    record.setdefault("correlation_id", (item or {}).get("pk", "").rsplit("#", 1)[-1] or "unknown")
     if item and "status" in item:
-        event_id = item.get("pk", "").rsplit("#", 1)[-1]
         record.update(
             state=item["status"],
             status=item["status"],
             attempt=int(item["attempt"]),
-            correlation_id=event_id,
         )
     emit("store", level, **record)
 
@@ -118,11 +117,12 @@ class Store:
                     reason.get("Code") in {"ConditionalCheckFailed", "TransactionConflict"}
                     for reason in reasons
                 ):
-                    _log(logging.WARNING, "state_conflict")
+                    _log(logging.WARNING, "state_conflict", writes[0][1])
                     raise Conflict("Conditional state write failed") from error
             _log(
                 logging.ERROR,
                 "state_write_failed",
+                writes[0][1],
                 error_class=type(error).__name__,
             )
             raise

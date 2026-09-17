@@ -397,7 +397,8 @@ def test_logs_stage_durations_and_event_id(message, capsys):
     process(sqs(message), Context(), Store(), Adapter())
 
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert {record["stage"] for record in records} >= {
+    stages = [record for record in records if "stage" in record]
+    assert {record["stage"] for record in stages} >= {
         "validate",
         "acquire",
         "started",
@@ -406,7 +407,9 @@ def test_logs_stage_durations_and_event_id(message, capsys):
     }
     assert all(record["event_id"] == message["event_id"] for record in records)
     assert all(record["correlation_id"] == message["event_id"] for record in records)
-    assert all(record["duration_ms"] >= 0 for record in records)
+    assert all(record["duration_ms"] >= 0 for record in stages)
+    completed = [record for record in records if record["state"] == "answer_completed"]
+    assert len(completed) == 1 and completed[0]["response_ms"] >= 0
 
 
 def test_failure_log_has_bounded_fields_and_error_class(message, monkeypatch, capsys):

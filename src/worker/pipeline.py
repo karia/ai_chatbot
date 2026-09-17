@@ -234,4 +234,10 @@ def process(event, context, store=None, adapter=None):
     except PermanentSlackError:
         _log(logging.ERROR, "delivery_isolated", event_id)
         return "isolated"
+    _log(
+        logging.INFO,
+        "answer_completed",
+        event_id,
+        response_ms=max(0, round((time.time() - message["received_at"]) * 1000, 3)),
+    )
     return "completed"

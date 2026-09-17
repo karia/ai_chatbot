@@ -62,7 +62,7 @@ locals {
       dimensions          = {}
     }
     lambda-timeouts = {
-      description         = "A worker stopped before its Lambda execution budget expired."
+      description         = "A worker stopped because its execution budget ran out."
       namespace           = local.monitoring_namespace
       metric_name         = "LambdaTimeouts"
       statistic           = "Sum"
@@ -80,6 +80,17 @@ locals {
       extended_statistic  = null
       period              = 60
       threshold           = 1
+      comparison_operator = "GreaterThanOrEqualToThreshold"
+      dimensions          = {}
+    }
+    answer-response-time = {
+      description         = "Answers took longer than sixty seconds at p95."
+      namespace           = local.monitoring_namespace
+      metric_name         = "AnswerResponseTime"
+      statistic           = null
+      extended_statistic  = "p95"
+      period              = 300
+      threshold           = 60000
       comparison_operator = "GreaterThanOrEqualToThreshold"
       dimensions          = {}
     }
@@ -110,6 +121,7 @@ locals {
 }
 
 resource "aws_sns_topic" "alarms" {
+  # Notifications carry alarm state only, so the AWS managed key suffices (AVD-AWS-0095).
   name = "${local.prefix}-alarms"
 }
 
@@ -140,12 +152,24 @@ resource "aws_cloudwatch_log_metric_filter" "session_stopped" {
 resource "aws_cloudwatch_log_metric_filter" "lambda_timeout" {
   name           = "${local.prefix}-lambda-timeout"
   log_group_name = aws_cloudwatch_log_group.lambda["worker"].name
-  pattern        = "{ ($.state = \"budget_exhausted\") || ($.error_class = \"TimeoutError\") }"
+  pattern        = "{ $.state = \"budget_exhausted\" }"
   metric_transformation {
     name          = "LambdaTimeouts"
     namespace     = local.monitoring_namespace
     value         = "1"
     default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "answer_completed" {
+  name           = "${local.prefix}-answer-completed"
+  log_group_name = aws_cloudwatch_log_group.lambda["worker"].name
+  pattern        = "{ $.state = \"answer_completed\" }"
+  metric_transformation {
+    name      = "AnswerResponseTime"
+    namespace = local.monitoring_namespace
+    value     = "$.response_ms"
+    unit      = "Milliseconds"
   }
 }
 
