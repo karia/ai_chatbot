@@ -58,7 +58,8 @@ mise exec -- aws sns list-subscriptions-by-topic --topic-arn "$TOPIC_ARN"
 ## DLQの処理
 
 DLQを消去する前に、可視メッセージ数と本文を確認する。
-本文には会話内容が含まれるため、端末の履歴や共有ログへコピーしない。
+本文にはSlackの発言内容が含まれる。
+IssueやPull Request、チャットなど他者が読める場所へ貼らず、調査のためにファイルへ保存した場合は作業後に消す。
 
 ```sh
 DLQ_URL="$(TF_DATA_DIR="$PWD/terraform/.terraform-<env>" mise exec -- terraform -chdir=terraform output -raw dlq_url)"
