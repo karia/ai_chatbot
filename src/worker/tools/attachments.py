@@ -1,8 +1,9 @@
 """Read the text files in one Slack event as untrusted tool results."""
 
+import logging
 import time
 
-from .url import TEXT_TYPES, FetchError, _decode_text, _fetch, _log
+from .url import TEXT_TYPES, FetchError, _decode_text, _fetch, emit
 
 MAX_ATTACHMENTS = 3
 
@@ -37,8 +38,9 @@ def fetch_attachments(event, *, slack_token):
             if file["mimetype"] not in TEXT_TYPES:
                 raise FetchError("unsupported_type")
     except FetchError as exc:
-        _log(
-            "WARNING",
+        emit(
+            "reader",
+            logging.WARNING,
             destination=None,
             bytes_read=0,
             duration_ms=round((time.monotonic() - started) * 1000, 2),

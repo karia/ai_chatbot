@@ -1,9 +1,7 @@
 """Bounded HTTPS reads. Returned text is untrusted data, never instructions."""
 
 import ipaddress
-import json
 import logging
-import os
 import socket
 import time
 from email.message import Message
@@ -11,6 +9,11 @@ from urllib.parse import urlsplit
 
 import pycurl
 from bs4 import BeautifulSoup
+
+try:
+    from ..observability import emit
+except ImportError:
+    from observability import emit
 
 MAX_BYTES = 1024 * 1024
 TIMEOUT_SECONDS = 10
@@ -59,13 +62,6 @@ def _public_address(address):
             and ip not in ipaddress.ip_network("64:ff9b::/96")
         )
     return True
-
-
-def _log(level, **fields):
-    levels = logging.getLevelNamesMapping()
-    threshold = levels.get(os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
-    if levels[level] >= threshold:
-        print(json.dumps({"level": level, "tool": "reader", **fields}))
 
 
 def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
@@ -178,15 +174,16 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
         reason = str(exc)
         raise
     finally:
-        level = "WARNING" if reason else "INFO"
+        level = logging.WARNING if reason else logging.INFO
         if reason in {
             "transport_error",
             "http_error",
             "connection_failed",
             "async_dns_required",
         }:
-            level = "ERROR"
-        _log(
+            level = logging.ERROR
+        emit(
+            "reader",
             level,
             destination=destination,
             bytes_read=size,

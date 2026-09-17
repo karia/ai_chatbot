@@ -249,6 +249,7 @@ def test_structured_log_omits_body_and_url_secrets(transport, capsys, monkeypatc
     assert record["bytes_read"] == 12
     assert record["duration_ms"] >= 0
     assert record["level"] == "INFO"
+    assert record["component"] == "reader"
     assert "secret" not in output
     assert "private body" not in output
 
