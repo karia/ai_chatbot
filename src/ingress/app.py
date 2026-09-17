@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 
 import boto3
@@ -17,6 +18,16 @@ else:
 
 
 MAX_MESSAGE_BYTES = 128 * 1024
+LOG_FIELD_LIMIT = 1_000
+SENSITIVE_FIELDS = {
+    "authorization",
+    "auth_header",
+    "headers",
+    "secret",
+    "signature",
+    "signing_secret",
+    "token",
+}
 
 _clients = {}
 
@@ -44,18 +55,43 @@ def _signing_secret():
 def _respond(status, state, started, *, body="", level="INFO", **fields):
     levels = logging.getLevelNamesMapping()
     if levels[level] >= levels.get(os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO):
-        for key, value in fields.items():
-            if isinstance(value, str) and len(value) > 1024:
-                fields[key] = value[:1013] + "[truncated]"
+        fields = {
+            key: _safe_log_value(value)
+            for key, value in fields.items()
+            if not _sensitive_field(key)
+        }
         print(json.dumps({
             "level": level,
             "component": "ingress",
             "state": state,
+            "correlation_id": fields.get("event_id", "unknown"),
             "status_code": status,
             "duration_ms": round((time.monotonic() - started) * 1000, 3),
             **fields,
         }))
     return {"statusCode": status, "headers": {"content-type": "application/json"}, "body": body}
+
+
+def _sensitive_field(key):
+    normalized = key.lower().replace("-", "_")
+    return normalized in SENSITIVE_FIELDS or normalized.endswith(
+        ("_secret", "_signature", "_token")
+    )
+
+
+def _safe_log_value(value):
+    if not isinstance(value, str):
+        return value
+    value = re.sub(
+        r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,}\"']+",
+        r"\1[REDACTED]",
+        value,
+    )
+    value = re.sub(r"v0=[0-9a-fA-F]{64}", "[REDACTED]", value)
+    value = re.sub(r"xox[baprs]-[A-Za-z0-9-]+", "[REDACTED]", value)
+    if len(value) > LOG_FIELD_LIMIT:
+        value = value[: LOG_FIELD_LIMIT - len("[truncated]")] + "[truncated]"
+    return value
 
 
 def lambda_handler(event, context):
@@ -68,12 +104,12 @@ def lambda_handler(event, context):
         else:
             body = body.encode("utf-8")
         headers = {key.lower(): value for key, value in (event.get("headers") or {}).items()}
-    except (ValueError, TypeError, AttributeError):
-        return _respond(400, "invalid_payload", started, level="WARN")
+    except (ValueError, TypeError, AttributeError) as error:
+        return _respond(400, "invalid_payload", started, level="WARN", error_class=type(error).__name__)
     try:
         secret = _signing_secret()
-    except KeyError:
-        return _respond(503, "invalid_configuration", started, level="ERROR")
+    except KeyError as error:
+        return _respond(503, "invalid_configuration", started, level="ERROR", error_class=type(error).__name__)
     if not verify(body, headers, secret, now):
         return _respond(401, "invalid_signature", started, level="WARN")
     try:
@@ -92,10 +128,10 @@ def lambda_handler(event, context):
             return _respond(200, "ignored", started)
         message_body = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
         message_bytes = len(message_body.encode("utf-8"))
-    except (ValueError, RecursionError):
-        return _respond(400, "invalid_payload", started, level="WARN")
-    except KeyError:
-        return _respond(503, "invalid_configuration", started, level="ERROR")
+    except (ValueError, RecursionError) as error:
+        return _respond(400, "invalid_payload", started, level="WARN", error_class=type(error).__name__)
+    except KeyError as error:
+        return _respond(503, "invalid_configuration", started, level="ERROR", error_class=type(error).__name__)
     fields = {"event_id": message["event_id"], "message_bytes": message_bytes}
     if message_bytes > MAX_MESSAGE_BYTES:
         return _respond(413, "oversized", started, level="WARN", oversized_count=1, **fields)
@@ -107,9 +143,9 @@ def lambda_handler(event, context):
             MessageDeduplicationId=fifo_id(message["team_id"], message["event_id"]),
         )
         if not result or not result.get("MessageId"):
-            return _respond(503, "queue_failed", started, level="ERROR", **fields)
-    except KeyError:
-        return _respond(503, "invalid_configuration", started, level="ERROR", **fields)
-    except (BotoCoreError, ClientError):
-        return _respond(503, "queue_failed", started, level="ERROR", **fields)
+            return _respond(503, "queue_failed", started, level="ERROR", error_class="MissingMessageId", **fields)
+    except KeyError as error:
+        return _respond(503, "invalid_configuration", started, level="ERROR", error_class=type(error).__name__, **fields)
+    except (BotoCoreError, ClientError) as error:
+        return _respond(503, "queue_failed", started, level="ERROR", error_class=type(error).__name__, **fields)
     return _respond(200, "queued", started, **fields)

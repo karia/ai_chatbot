@@ -3,8 +3,12 @@
 
 AVD-AWS-0017
 
-# AVD-AWS-0066: Lambda X-Ray tracing is not enabled in Terraform.
-# Tracing is configured with the rest of the monitoring work, not in this stack.
+# AVD-AWS-0095: Alarm notifications contain resource status metadata, not application payloads.
+# CloudWatch publishing to an encrypted topic would require a separately managed KMS key and policy.
+AVD-AWS-0095
+
+# AVD-AWS-0066: PassThrough is deliberate so Lambda does not create traces automatically.
+# Model input and output tracing remains disabled.
 AVD-AWS-0066
 
 # AVD-AWS-0025: DynamoDB uses the AWS managed KMS key for encryption at rest.

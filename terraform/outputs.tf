@@ -10,6 +10,9 @@ output "app_config" {
       FunctionName = fn.function_name
       Role         = aws_iam_role.app[name].arn
       Timeout      = name == "worker" ? var.worker_timeout : var.ingress_timeout
+      TracingConfig = {
+        Mode = "PassThrough"
+      }
       Environment = { Variables = merge({
         LOG_LEVEL = var.log_level
         }, name == "ingress" ? {
@@ -25,4 +28,14 @@ output "app_config" {
       }) }
     }
   }
+}
+
+output "alarm_topic_arn" {
+  value     = aws_sns_topic.alarms.arn
+  sensitive = true
+}
+
+output "dlq_url" {
+  value     = aws_sqs_queue.dlq.url
+  sensitive = true
 }

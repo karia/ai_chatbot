@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -382,7 +384,7 @@ def test_memory_read_timeout_prevents_model_call(monkeypatch):
         conversation.generate(message())
 
 
-def test_tool_budget_bounds_external_reads(monkeypatch):
+def test_tool_budget_bounds_external_reads(monkeypatch, capsys):
     reads = []
     monkeypatch.setattr(conversation, "fetch_url", lambda url: reads.append(url) or {"text": "ok"})
     url_tool = conversation._tools(message())[0]
@@ -399,6 +401,9 @@ def test_tool_budget_bounds_external_reads(monkeypatch):
     results = asyncio.run(invoke())
     assert len(reads) == conversation.MAX_TOOL_CALLS
     assert "tool_limit" in str(results[-1])
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert all(record["correlation_id"] == "Ev1" for record in records)
+    assert all(record["tool_name"] == "read_url" for record in records)
 
 
 @pytest.mark.parametrize(("file_ids", "names"), [
@@ -407,6 +412,51 @@ def test_tool_budget_bounds_external_reads(monkeypatch):
 ])
 def test_tools_match_available_inputs(file_ids, names):
     assert [item.tool_name for item in conversation._tools(message(file_ids=file_ids))] == names
+
+
+def test_structured_log_sanitizes_and_bounds_fields(monkeypatch, capsys):
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    conversation._record(
+        logging.INFO,
+        operation="generated",
+        event_id="E" * 2_000,
+        authorization="Bearer private-auth-value",
+        access_token="xoxb-private-access-token",
+        signature="v0=" + "a" * 64,
+        secret="private-secret-value",
+        model_input="Authorization: Bearer nested-auth-value",
+        input_tokens=3,
+        output_tokens=5,
+    )
+
+    output = capsys.readouterr().out
+    record = json.loads(output)
+    assert record["correlation_id"].endswith("[truncated]")
+    assert len(record["correlation_id"]) == 1_000
+    assert record["input_tokens"] == 3
+    assert record["output_tokens"] == 5
+    assert "private-auth-value" not in output
+    assert "private-access-token" not in output
+    assert "nested-auth-value" not in output
+    assert "private-secret-value" not in output
+
+
+def test_throttling_is_logged_without_error_details(monkeypatch, capsys):
+    from botocore.exceptions import ClientError
+
+    error = ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "private detail"}},
+        "ListEvents",
+    )
+
+    with pytest.raises(ClientError):
+        conversation._observed("memory", lambda: (_ for _ in ()).throw(error))
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["operation"] == "service_throttled"
+    assert record["service"] == "memory"
+    assert record["error_class"] == "ClientError"
+    assert "private detail" not in json.dumps(record)
 
 
 def test_url_and_attachment_reads_share_tool_budget(monkeypatch):

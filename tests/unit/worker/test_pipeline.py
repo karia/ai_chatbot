@@ -217,6 +217,8 @@ def test_stopped_session_is_logged_as_error_and_retried_without_external_call(
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert records[-1]["state"] == "session_stopped"
     assert records[-1]["level"] == "ERROR"
+    assert records[-1]["correlation_id"] == message["event_id"]
+    assert records[-1]["error_class"] == "SessionStopped"
     assert all(record["state"] != "stage_failed" for record in records)
 
 
@@ -395,7 +397,8 @@ def test_logs_stage_durations_and_event_id(message, capsys):
     process(sqs(message), Context(), Store(), Adapter())
 
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert {record["stage"] for record in records} >= {
+    stages = [record for record in records if "stage" in record]
+    assert {record["stage"] for record in stages} >= {
         "validate",
         "acquire",
         "started",
@@ -403,7 +406,31 @@ def test_logs_stage_durations_and_event_id(message, capsys):
         "send",
     }
     assert all(record["event_id"] == message["event_id"] for record in records)
-    assert all(record["duration_ms"] >= 0 for record in records)
+    assert all(record["correlation_id"] == message["event_id"] for record in records)
+    assert all(record["duration_ms"] >= 0 for record in stages)
+    completed = [record for record in records if record["state"] == "answer_completed"]
+    assert len(completed) == 1 and completed[0]["response_ms"] >= 0
+
+
+def test_failure_log_has_bounded_fields_and_error_class(message, monkeypatch, capsys):
+    class LongNamedFailure(Exception):
+        pass
+
+    monkeypatch.setattr(
+        pipeline,
+        "generate",
+        lambda unused: (_ for _ in ()).throw(LongNamedFailure("private detail")),
+    )
+    message["event_id"] = "E" * 2_000
+
+    with pytest.raises(LongNamedFailure):
+        process(sqs(message), Context(), Store(), Adapter())
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    failed = next(record for record in records if record["state"] == "stage_failed")
+    assert failed["error_class"] == "LongNamedFailure"
+    assert len(failed["event_id"]) <= 1_000
+    assert "private detail" not in json.dumps(failed)
 
 
 def test_lambda_handler_runs_pipeline(monkeypatch):

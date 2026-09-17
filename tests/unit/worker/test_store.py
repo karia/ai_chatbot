@@ -380,7 +380,8 @@ def test_transaction_conflict_is_retryable_and_logged_as_warning(state, monkeypa
         acquire(store)
     assert caught.value.__cause__ is error
     assert json.loads(capsys.readouterr().out) == {
-        "level": "WARNING", "operation": "state_conflict"
+        "level": "WARNING", "component": "store", "operation": "state_conflict",
+        "correlation_id": "E", "state": "RUNNING", "status": "RUNNING", "attempt": 1,
     }
     assert store.get_event("T", "E") is None
 

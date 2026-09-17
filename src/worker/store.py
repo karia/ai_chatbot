@@ -1,6 +1,5 @@
 """Conditional state writes. Callers retain returned event snapshots for updates."""
 
-import json
 import logging
 import math
 import os
@@ -11,6 +10,11 @@ from uuid import uuid4
 import boto3
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
+
+if __package__:
+    from .observability import emit
+else:
+    from observability import emit
 
 
 LEASE_MARGIN_SECONDS = 30
@@ -43,16 +47,16 @@ def _now():
     return Decimal(str(time.time()))
 
 
-def _log(level, operation, item=None):
-    threshold = logging.getLevelNamesMapping().get(
-        os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
-    )
-    if level < threshold:
-        return
-    record = {"level": logging.getLevelName(level), "operation": operation}
+def _log(level, operation, item=None, **fields):
+    record = {"operation": operation, **fields}
+    record.setdefault("correlation_id", (item or {}).get("pk", "").rsplit("#", 1)[-1] or "unknown")
     if item and "status" in item:
-        record.update(status=item["status"], attempt=int(item["attempt"]))
-    print(json.dumps(record), flush=True)
+        record.update(
+            state=item["status"],
+            status=item["status"],
+            attempt=int(item["attempt"]),
+        )
+    emit("store", level, **record)
 
 
 class Store:
@@ -113,9 +117,14 @@ class Store:
                     reason.get("Code") in {"ConditionalCheckFailed", "TransactionConflict"}
                     for reason in reasons
                 ):
-                    _log(logging.WARNING, "state_conflict")
+                    _log(logging.WARNING, "state_conflict", writes[0][1])
                     raise Conflict("Conditional state write failed") from error
-            _log(logging.ERROR, "state_write_failed")
+            _log(
+                logging.ERROR,
+                "state_write_failed",
+                writes[0][1],
+                error_class=type(error).__name__,
+            )
             raise
         item = writes[0][1]
         level = logging.ERROR if item.get("status") == "NEEDS_REVIEW" else logging.INFO

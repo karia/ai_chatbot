@@ -53,6 +53,62 @@ run "initial_settings" {
     )
     error_message = "FIFO ordering, storage keys and retention must match the application contract."
   }
+
+  assert {
+    condition = (
+      aws_sns_topic.alarms.name == "ai-chatbot-dev-alarms" &&
+      alltrue([for alarm in aws_cloudwatch_metric_alarm.monitoring : length(alarm.alarm_actions) == 1]) &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].extended_statistic == "p99" &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].threshold == 2000 &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-5xx"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["queue-age"].threshold == 300 &&
+      aws_cloudwatch_metric_alarm.monitoring["dlq-messages"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["needs-review"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["lambda-timeouts"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["session-stopped"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-errors"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["worker-errors"].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.monitoring["answer-response-time"].threshold == 60000 &&
+      aws_cloudwatch_metric_alarm.monitoring["answer-response-time"].extended_statistic == "p95"
+    )
+    error_message = "Monitoring alarms must preserve ADR-001 thresholds and share one SNS topic."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_log_metric_filter.needs_review.pattern == "{ $.status = \"NEEDS_REVIEW\" }" &&
+      aws_cloudwatch_log_metric_filter.session_stopped.pattern == "{ $.state = \"session_stopped\" }" &&
+      aws_cloudwatch_log_metric_filter.lambda_timeout.pattern == "{ $.state = \"budget_exhausted\" }" &&
+      aws_cloudwatch_log_metric_filter.answer_completed.pattern == "{ $.state = \"answer_completed\" }" &&
+      aws_cloudwatch_log_metric_filter.answer_completed.metric_transformation[0].value == "$.response_ms" &&
+      aws_cloudwatch_log_metric_filter.service_throttled.pattern == "{ $.operation = \"service_throttled\" }"
+    )
+    error_message = "Structured log filters must measure isolation, timeout, latency and throttling events."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].period == 300 &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].namespace == "AWS/ApiGateway" &&
+      contains(keys(aws_cloudwatch_metric_alarm.monitoring["ingress-latency"].dimensions), "ApiId") &&
+      aws_cloudwatch_metric_alarm.monitoring["queue-age"].period == 60 &&
+      aws_cloudwatch_metric_alarm.monitoring["queue-age"].statistic == "Maximum" &&
+      aws_cloudwatch_metric_alarm.monitoring["queue-age"].comparison_operator == "GreaterThanThreshold" &&
+      aws_cloudwatch_metric_alarm.monitoring["queue-age"].dimensions["QueueName"] == aws_sqs_queue.events.name &&
+      aws_cloudwatch_metric_alarm.monitoring["dlq-messages"].dimensions["QueueName"] == aws_sqs_queue.dlq.name &&
+      aws_cloudwatch_metric_alarm.monitoring["worker-errors"].dimensions["FunctionName"] == aws_lambda_function.app["worker"].function_name &&
+      aws_cloudwatch_metric_alarm.monitoring["ingress-errors"].dimensions["FunctionName"] == aws_lambda_function.app["ingress"].function_name &&
+      alltrue([for alarm in aws_cloudwatch_metric_alarm.monitoring : alarm.comparison_operator != "" && alarm.evaluation_periods == 1])
+    )
+    error_message = "Alarms must keep their metric source, period and comparison."
+  }
+
+  assert {
+    condition = alltrue([
+      for config in values(output.app_config) : config.TracingConfig.Mode == "PassThrough"
+    ])
+    error_message = "Lambda tracing must not automatically collect model input or output."
+  }
 }
 
 run "global_bedrock_arns" {

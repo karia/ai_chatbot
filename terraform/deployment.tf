@@ -161,11 +161,21 @@ resource "aws_iam_role_policy" "deploy" {
       },
       {
         Effect = "Allow"
-        Action = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy", "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"]
+        Action = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy", "logs:PutMetricFilter", "logs:DeleteMetricFilter", "logs:DescribeMetricFilters", "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"]
         Resource = flatten([for path in ["lambda/${local.prefix}-*", "apigateway/${local.prefix}-*"] : [
           "${format(local.regional_arn, "logs")}:log-group:/aws/${path}",
           "${format(local.regional_arn, "logs")}:log-group:/aws/${path}:*"
         ]])
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms", "cloudwatch:PutMetricAlarm", "cloudwatch:ListTagsForResource", "cloudwatch:TagResource", "cloudwatch:UntagResource"]
+        Resource = "${format(local.regional_arn, "cloudwatch")}:alarm:${local.prefix}-*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["sns:CreateTopic", "sns:DeleteTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes", "sns:ListTagsForResource", "sns:TagResource", "sns:UntagResource"]
+        Resource = "${format(local.regional_arn, "sns")}:${local.prefix}-alarms"
       },
       {
         Effect    = "Allow"
