@@ -42,11 +42,11 @@ print(json.loads(response['body'].read()))
 
 レスポンスが正常に返れば利用可能。
 
-### 3. `src/config.py` を更新
+### 3. Terraformのモデル設定を更新
 
-```python
-AI_MODEL_ID = "global.anthropic.claude-opus-4-7"  # 確認したモデル ID に変更
-```
+`terraform/variables.tf`の`bedrock_model_id`と`src/worker/conversation.py`の`MODEL_ID`を確認したInference Profile IDへ更新する。
+`terraform/tests/contracts.tftest.hcl`の期待値も同じIDへ更新する。
+同じモデルのInference Profile ARNをGitHub Environmentの`BEDROCK_RESOURCE_ARNS`へ設定する。
 
 ### 4. テスト実行
 
@@ -60,7 +60,7 @@ bash run_tests.sh
 
 ```bash
 git checkout -b update/claude-opus-4-x
-git add src/config.py
+git add terraform/variables.tf terraform/tests/contracts.tftest.hcl src/worker/conversation.py
 git commit -m "Update AI model to Claude Opus 4.x"
 gh pr create --title "Update AI model to Claude Opus 4.x" --body "..."
 ```
@@ -69,12 +69,11 @@ gh pr create --title "Update AI model to Claude Opus 4.x" --body "..."
 
 ### 6. デプロイ
 
-リポジトリルートにある `function-*.json` を全てデプロイする：
+Terraformで権限と環境変数を更新してから、lambrollでワーカーを配布する。
 
 ```bash
-for f in function-*.json; do
-  bash deploy.sh "$f"
-done
+mise exec -- make deploy-infra ENV=dev
+mise exec -- make deploy-app ENV=dev
 ```
 
 ## トラブルシューティング
