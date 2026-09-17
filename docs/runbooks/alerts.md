@@ -9,16 +9,16 @@ CloudWatchアラームは環境ごとのSNSトピックへ通知する。
 
 | アラーム末尾 | 通知条件 | 最初に確認する内容 |
 | --- | --- | --- |
-| `ingress-latency` | 受付遅延の5分間p99が2,000ミリ秒以上 | API Gatewayの5xx、受付LambdaのDuration、SQS送信エラーを確認する |
-| `ingress-5xx` | 受付の5xxが5分間に1件以上 | APIアクセスログのrequest IDから受付Lambdaの`state`と`error_class`を確認する |
-| `queue-age` | 最古メッセージの待ち時間が300秒を超過 | ワーカーLambdaのエラー、スロットリング、同時実行数を確認する |
+| `ingress-latency` | 受付の応答時間が、直近5分間のp99で2秒以上 | API Gatewayの5xx、受付LambdaのDuration、SQS送信エラーを確認する |
+| `ingress-5xx` | 受付の5xxが直近5分間に1件以上 | APIアクセスログのrequest IDから受付Lambdaの`state`と`error_class`を確認する |
+| `queue-age` | 最古メッセージの待ち時間が5分を超過 | ワーカーLambdaのエラー、スロットリング、同時実行数を確認する |
 | `dlq-messages` | DLQの可視メッセージが1件以上 | メッセージを隔離した原因を調査し、再処理または破棄を決める |
 | `needs-review` | `NEEDS_REVIEW`への遷移が1件以上 | `correlation_id`に対応する失敗分類を確認し、セッション停止を解除する前に投稿状態を照合する |
 | `lambda-timeouts` | 残り時間の不足による打ち切りが1件以上 | `stage`と残り時間を確認し、外部APIの遅延とワーカーのタイムアウト設定を比較する。Lambda本体のタイムアウトは`worker-errors`で検知する |
-| `answer-response-time` | 受信から投稿完了までの5分間p95が60,000ミリ秒以上 | `answer_completed`の`response_ms`とステージ別の`duration_ms`を比較し、待ち時間と生成時間のどちらが伸びたかを切り分ける |
+| `answer-response-time` | 受信から投稿完了までの所要時間が、直近5分間のp95で60秒以上 | `answer_completed`の`response_ms`とステージ別の`duration_ms`を比較し、待ち時間と生成時間のどちらが伸びたかを切り分ける |
 | `session-stopped` | 停止中のセッションへイベントが1件以上到着 | 先行する`NEEDS_REVIEW`を解決し、保留イベントを再処理する順序を決める |
-| `ingress-errors` | 受付LambdaのErrorsが5分間に1件以上 | 受付Lambdaの最新エラーとAPI Gatewayの応答を確認する |
-| `worker-errors` | ワーカーLambdaのErrorsが5分間に1件以上 | SQSの再試行回数、ワーカーの`state`、`error_class`を確認する |
+| `ingress-errors` | 受付LambdaのErrorsが直近5分間に1件以上 | 受付Lambdaの最新エラーとAPI Gatewayの応答を確認する |
+| `worker-errors` | ワーカーLambdaのErrorsが直近5分間に1件以上 | SQSの再試行回数、ワーカーの`state`、`error_class`を確認する |
 
 メトリクスがない期間は正常として扱う。
 `ai-chatbot-<env>/Monitoring`の`ServiceThrottles`は`Service`ディメンションで`bedrock`と`memory`を分ける。
