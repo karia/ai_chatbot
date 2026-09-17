@@ -14,7 +14,7 @@ CloudWatchアラームは環境ごとのSNSトピックへ通知する。
 | `queue-age` | 最古メッセージの待ち時間が300秒を超過 | ワーカーLambdaのエラー、スロットリング、同時実行数を確認する |
 | `dlq-messages` | DLQの可視メッセージが1件以上 | メッセージを隔離した原因を調査し、再処理または破棄を決める |
 | `needs-review` | `NEEDS_REVIEW`への遷移が1件以上 | `correlation_id`に対応する失敗分類を確認し、セッション停止を解除する前に投稿状態を照合する |
-| `lambda-timeouts` | 実行予算の不足が1件以上 | `stage`と残り時間を確認し、外部APIの遅延とワーカーのタイムアウト設定を比較する。Lambda本体の強制終了は`worker-errors`で検知する |
+| `lambda-timeouts` | 残り時間の不足による打ち切りが1件以上 | `stage`と残り時間を確認し、外部APIの遅延とワーカーのタイムアウト設定を比較する。Lambda本体のタイムアウトは`worker-errors`で検知する |
 | `answer-response-time` | 受信から投稿完了までの5分間p95が60,000ミリ秒以上 | `answer_completed`の`response_ms`とステージ別の`duration_ms`を比較し、待ち時間と生成時間のどちらが伸びたかを切り分ける |
 | `session-stopped` | 停止中のセッションへイベントが1件以上到着 | 先行する`NEEDS_REVIEW`を解決し、保留イベントを再処理する順序を決める |
 | `ingress-errors` | 受付LambdaのErrorsが5分間に1件以上 | 受付Lambdaの最新エラーとAPI Gatewayの応答を確認する |
