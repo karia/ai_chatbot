@@ -12,7 +12,6 @@ if [ ! -d "$VENV_PATH" ]; then
     # 仮想環境を有効化して依存パッケージをインストール
     source "$VENV_PATH/bin/activate"
     pip install --upgrade pip
-    pip install -r requirements.txt
     pip install -r requirements-dev.txt
     echo "必要なパッケージをインストールしました"
 else
@@ -22,8 +21,7 @@ fi
 
 pip install -r src/worker/requirements.txt
 
-# 必要な環境変数を設定（テスト用のダミー値）
-export SLACK_BOT_TOKEN="xoxb-test-token"
+# AWSクライアントをローカルで初期化するためのダミー値
 export DYNAMODB_TABLE_NAME="test-table"
 export AWS_ACCESS_KEY_ID="testing"
 export AWS_SECRET_ACCESS_KEY="testing"
