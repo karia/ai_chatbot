@@ -8,6 +8,9 @@ import boto3
 import discord
 
 
+MAX_SEND_FAILURES = 3
+
+
 def emit(level, state, **fields):
     threshold = logging.getLevelNamesMapping().get(
         os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO
@@ -69,6 +72,48 @@ def queue_ids(message):
     )
 
 
+class QueueSender:
+    def __init__(self, sqs, queue_url, exit_process=os._exit):
+        self.sqs = sqs
+        self.queue_url = queue_url
+        self.exit_process = exit_process
+        self.failures = 0
+
+    async def send(self, message):
+        group_id, deduplication_id = queue_ids(message)
+        try:
+            result = await asyncio.to_thread(
+                self.sqs.send_message,
+                QueueUrl=self.queue_url,
+                MessageBody=json.dumps(message, separators=(",", ":")),
+                MessageGroupId=group_id,
+                MessageDeduplicationId=deduplication_id,
+            )
+            if not result.get("MessageId"):
+                raise RuntimeError("SQS did not return a message ID")
+        except Exception as error:
+            self.failures += 1
+            emit(
+                logging.ERROR,
+                "queue_failed",
+                event_id=message["event_id"],
+                error_class=type(error).__name__,
+                consecutive_failures=self.failures,
+            )
+            if self.failures >= MAX_SEND_FAILURES:
+                emit(
+                    logging.ERROR,
+                    "send_failure_limit",
+                    event_id=message["event_id"],
+                    consecutive_failures=self.failures,
+                )
+                self.exit_process(1)
+            return False
+        self.failures = 0
+        emit(logging.INFO, "queued", event_id=message["event_id"])
+        return True
+
+
 def _required(name):
     value = os.environ[name]
     if not value:
@@ -98,6 +143,7 @@ def main():
     intents.guilds = True
     intents.guild_messages = True
     client = discord.Client(intents=intents)
+    sender = QueueSender(sqs, queue_url)
 
     @client.event
     async def on_ready():
@@ -110,26 +156,7 @@ def main():
         ):
             return
         queued = to_queue_message(message, client.user.id, int(time.time()))
-        group_id, deduplication_id = queue_ids(queued)
-        try:
-            result = await asyncio.to_thread(
-                sqs.send_message,
-                QueueUrl=queue_url,
-                MessageBody=json.dumps(queued, separators=(",", ":")),
-                MessageGroupId=group_id,
-                MessageDeduplicationId=deduplication_id,
-            )
-            if not result.get("MessageId"):
-                raise RuntimeError("SQS did not return a message ID")
-        except Exception as error:
-            emit(
-                logging.ERROR,
-                "queue_failed",
-                event_id=queued["event_id"],
-                error_class=type(error).__name__,
-            )
-            return
-        emit(logging.INFO, "queued", event_id=queued["event_id"])
+        await sender.send(queued)
 
     client.run(token, log_handler=None)
 

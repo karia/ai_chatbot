@@ -1,8 +1,10 @@
+import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
 
-from discord_gateway.app import queue_ids, should_handle, to_queue_message
+from discord_gateway.app import QueueSender, queue_ids, should_handle, to_queue_message
 
 
 BOT_ID = 100
@@ -87,3 +89,28 @@ def test_queue_ids_cannot_match_slack_hash_ids():
 
     assert group_id == "discord:conversation:200:500"
     assert deduplication_id == "discord:event:500"
+
+
+def test_queue_sender_exits_after_three_consecutive_failures_and_resets_on_success(capsys):
+    class Sqs:
+        outcomes = [OSError(), OSError(), {"MessageId": "ok"}, OSError(), OSError(), OSError()]
+
+        def send_message(self, **_kwargs):
+            outcome = self.outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+    exit_codes = []
+    sender = QueueSender(Sqs(), "queue-url", exit_process=exit_codes.append)
+    queued = to_queue_message(message(), BOT_ID, 1_234)
+
+    async def send_all():
+        for _ in range(6):
+            await sender.send(queued)
+
+    asyncio.run(send_all())
+
+    assert exit_codes == [1]
+    logs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert logs[-1]["state"] == "send_failure_limit"
