@@ -215,6 +215,16 @@ def test_slack_memory_ids_remain_byte_for_byte_compatible(monkeypatch):
     )
 
 
+def test_discord_memory_ids_do_not_collide_with_equal_slack_ids(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "dev")
+    slack = conversation.memory_ids(message())
+    discord = conversation.memory_ids(
+        message(platform="discord", guild_id="T1", conversation_id=message()["thread_ts"])
+    )
+
+    assert discord != slack
+
+
 @pytest.mark.parametrize("model_id", ["global.anthropic.claude-opus-5", "custom.model"])
 def test_generate_confirms_memory_save_and_uses_budgets(monkeypatch, model_id):
     calls = []
