@@ -9,4 +9,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 
 USER 65532:65532
+STOPSIGNAL SIGINT
 CMD ["python", "app.py"]
