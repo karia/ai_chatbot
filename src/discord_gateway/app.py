@@ -6,6 +6,7 @@ import time
 
 import boto3
 import discord
+from botocore.exceptions import NoRegionError
 
 
 MAX_SEND_FAILURES = 3
@@ -139,11 +140,11 @@ def main():
         queue_url = _required("QUEUE_URL")
         guild_ids = _ids("ALLOWED_GUILD_IDS")
         channel_ids = _ids("ALLOWED_CHANNEL_IDS")
-    except (KeyError, ValueError) as error:
+        sqs = boto3.client("sqs")
+    except (KeyError, NoRegionError, ValueError) as error:
         emit(logging.ERROR, "invalid_configuration", error_class=type(error).__name__)
         raise SystemExit(1) from error
 
-    sqs = boto3.client("sqs")
     intents = discord.Intents.none()
     intents.guilds = True
     intents.guild_messages = True

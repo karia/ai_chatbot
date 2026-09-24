@@ -3,8 +3,9 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import NoRegionError
 
-from discord_gateway.app import QueueSender, queue_ids, should_handle, to_queue_message
+from discord_gateway.app import QueueSender, main, queue_ids, should_handle, to_queue_message
 
 
 BOT_ID = 100
@@ -144,3 +145,26 @@ def test_queue_sender_preserves_gateway_receive_order(monkeypatch):
 
     asyncio.run(scenario())
     assert order == ["500", "501"]
+
+
+def test_missing_aws_region_is_invalid_configuration(monkeypatch, capsys):
+    for name, value in {
+        "DISCORD_BOT_TOKEN": "token",
+        "QUEUE_URL": "queue-url",
+        "ALLOWED_GUILD_IDS": "200",
+        "ALLOWED_CHANNEL_IDS": "300",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    def no_region(_service):
+        raise NoRegionError
+
+    monkeypatch.setattr("discord_gateway.app.boto3.client", no_region)
+
+    with pytest.raises(SystemExit) as stopped:
+        main()
+
+    assert stopped.value.code == 1
+    log = json.loads(capsys.readouterr().out)
+    assert log["state"] == "invalid_configuration"
+    assert log["error_class"] == "NoRegionError"
