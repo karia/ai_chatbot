@@ -35,6 +35,7 @@ run "initial_settings" {
       aws_lambda_event_source_mapping.worker.batch_size == 1
       && output.app_config.worker.Environment.Variables.BEDROCK_MODEL_ID == "global.anthropic.claude-opus-5"
       && output.app_config.worker.Environment.Variables.ENVIRONMENT == "dev"
+      && output.app_config.worker.Environment.Variables.DISCORD_BOT_TOKEN_SECRET_ARN == data.aws_secretsmanager_secret.discord_bot.arn
     )
     error_message = "Lambda and queue settings must preserve ADR-001's initial contract."
   }
@@ -144,7 +145,8 @@ run "production_isolation" {
       aws_sqs_queue.events.name == "ai-chatbot-prod-events.fifo" &&
       aws_dynamodb_table.state.name == "ai-chatbot-prod-state" &&
       aws_bedrockagentcore_memory.conversation.name == "ai_chatbot_prod_conversation" &&
-      data.aws_secretsmanager_secret.bot.name == "ai-chatbot-prod/slack-bot-token"
+      data.aws_secretsmanager_secret.bot.name == "ai-chatbot-prod/slack-bot-token" &&
+      data.aws_secretsmanager_secret.discord_bot.name == "ai-chatbot-prod/discord-bot-token"
     )
     error_message = "Production resource and secret names must be isolated from development."
   }
@@ -182,7 +184,9 @@ run "secret_permissions" {
   assert {
     condition = (
       !strcontains(aws_iam_role_policy.app["ingress"].policy, "secretsmanager:GetSecretValue") &&
-      strcontains(aws_iam_role_policy.app["worker"].policy, "secretsmanager:GetSecretValue")
+      strcontains(aws_iam_role_policy.app["worker"].policy, "secretsmanager:GetSecretValue") &&
+      strcontains(aws_iam_role_policy.app["worker"].policy, data.aws_secretsmanager_secret.bot.arn) &&
+      strcontains(aws_iam_role_policy.app["worker"].policy, data.aws_secretsmanager_secret.discord_bot.arn)
     )
     error_message = "Only the worker may retrieve Secrets Manager values."
   }

@@ -10,6 +10,8 @@ Terraformがインフラを管理し、lambrollがLambdaの公開バージョン
 ### AWSとTerraform
 
 管理者のAWS認証情報を使い、[Terraformの初期設定](../../terraform/README.md)に従って既存のS3バックエンドとSecrets Managerを準備する。
+Terraformを適用する前に、Secrets Managerへ`ai-chatbot-<env>/discord-bot-token`を作成し、Discord Developer Portalで発行したBot TokenをプレーンテキストのSecretStringとして登録する。
+Secretはdevとprodに個別に作成し、値をTerraformやGitHub Secretsへ登録しない。
 環境ごとのstate keyは`ai-chatbot/<env>/terraform.tfstate`とし、Terraform workspaceは`default`を使う。
 バケット名はgit管理外の`terraform/<env>.tfbackend`と環境変数`TF_VAR_state_bucket`へ設定する。
 両方に同じ名前を指定する。

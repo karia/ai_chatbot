@@ -35,3 +35,7 @@ resource "aws_bedrockagentcore_memory" "conversation" {
 data "aws_secretsmanager_secret" "bot" {
   name = "${local.prefix}/slack-bot-token"
 }
+
+data "aws_secretsmanager_secret" "discord_bot" {
+  name = "${local.prefix}/discord-bot-token"
+}
