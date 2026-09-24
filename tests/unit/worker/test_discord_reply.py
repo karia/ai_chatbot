@@ -102,6 +102,9 @@ def test_creates_thread_splits_replies_and_suppresses_mentions():
     assert [request.method for request, _ in requests] == ["POST", "POST", "POST"]
     assert requests[0][0].full_url.endswith("/channels/C/messages/M/threads")
     assert requests[1][0].full_url.endswith("/channels/M/messages")
+    assert requests[1][0].get_header("User-agent") == (
+        "DiscordBot (https://github.com/karia/ai_chatbot, 1.0)"
+    )
     payloads = [json.loads(request.data) for request, _ in requests]
     assert len(payloads[1]["content"]) == 2000
     assert payloads[2]["content"] == "x"
@@ -167,18 +170,53 @@ def test_429_is_deferred_when_lambda_budget_is_low():
     adapter = DiscordReplyAdapter(
         store=store, token="secret",
         open_request=lambda request, timeout: (_ for _ in ()).throw(
-            http_error(429, {"retry_after": 3.5, "global": False})
+            http_error(429, {"retry_after": 20, "global": False})
         ),
         now=lambda: 1000,
     )
 
     with pytest.raises(RetryableDiscordError):
         adapter.send(
-            event(), "G", "M", "M", Context(5_000),
+            event(), "G", "M", "M", Context(15_000),
             source_message_id="N", create_thread=False,
         )
 
-    assert store.calls[-1] == ("defer_post", 1003.5)
+    assert store.calls[-1] == ("defer_post", 1020)
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        event(),
+        {
+            **event(),
+            "status": "POSTING",
+            "slack_parts": [{"end": 6, "ts": "R1"}],
+        },
+    ],
+)
+def test_low_budget_defers_before_reserving_or_sending_part(saved):
+    store = Store()
+    adapter = DiscordReplyAdapter(
+        store=store,
+        token="secret",
+        open_request=lambda request, timeout: pytest.fail("Discord request sent"),
+        now=lambda: 1000,
+    )
+
+    with pytest.raises(RetryableDiscordError):
+        adapter.send(
+            saved,
+            "G",
+            "M",
+            "M",
+            Context(14_999),
+            source_message_id="N",
+            create_thread=False,
+        )
+
+    assert not any(call[0] == "start_post" for call in store.calls)
+    assert store.calls[-1] == ("defer_post", 1000)
 
 
 @pytest.mark.parametrize("error", [http_error(503, {}), URLError("disconnected")])

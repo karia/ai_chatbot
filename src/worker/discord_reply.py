@@ -19,7 +19,9 @@ else:
 API_URL = "https://discord.com/api/v10"
 MESSAGE_LIMIT = 2_000
 MIN_REMAINING_MS = 5_000
+HTTP_TIMEOUT_SECONDS = 10
 DEFAULT_RETRY_AFTER = 3
+USER_AGENT = "DiscordBot (https://github.com/karia/ai_chatbot, 1.0)"
 
 
 class RetryableDiscordError(Exception):
@@ -66,11 +68,11 @@ class DiscordReplyAdapter:
                 headers={
                     "Authorization": f"Bot {self.token}",
                     "Content-Type": "application/json",
-                    "User-Agent": "ai-chatbot",
+                    "User-Agent": USER_AGENT,
                 },
             )
             try:
-                with self.open_request(request, timeout=10) as response:
+                with self.open_request(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
                     body = response.read()
                 return json.loads(body) if body else {}
             except HTTPError as error:
@@ -112,6 +114,14 @@ class DiscordReplyAdapter:
                 raise RetryableDiscordError("Discord response was unavailable") from error
         raise AssertionError("Discord retry loop exhausted")
 
+    def _require_request_budget(self, event, context):
+        if context.get_remaining_time_in_millis() >= (
+            HTTP_TIMEOUT_SECONDS * 1_000 + MIN_REMAINING_MS
+        ):
+            return
+        self.event = self.store.defer_post(event, self.now())
+        raise RetryableDiscordError("Insufficient time for Discord request")
+
     def send(
         self, event, guild, channel, conversation, context, *, source_message_id,
         create_thread,
@@ -146,6 +156,7 @@ class DiscordReplyAdapter:
             }
             start = end
             if "ts" in part:
+                self._require_request_budget(event, context)
                 self._request(
                     "PATCH",
                     f"/channels/{conversation}/messages/{part['ts']}",
@@ -156,6 +167,7 @@ class DiscordReplyAdapter:
                 continue
             for attempt in range(10):
                 try:
+                    self._require_request_budget(event, context)
                     event = self.store.start_post(
                         event, index, guild, conversation, platform="discord"
                     )
