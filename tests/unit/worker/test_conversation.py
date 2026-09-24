@@ -11,6 +11,7 @@ from strands.models.model import Model
 from strands.types.session import SessionMessage
 
 from worker import conversation
+from worker.tools.attachments import MAX_ATTACHMENTS, MAX_IMAGE_BYTES
 
 
 def message(**changes):
@@ -478,6 +479,92 @@ def test_url_and_attachment_reads_share_tool_budget(monkeypatch):
     assert len(reads) == 3
     assert "tool_limit" not in str(results[2])
     assert "tool_limit" in str(results[-1])
+
+
+def test_attachment_tool_returns_text_and_image_blocks(monkeypatch, capsys):
+    class Secrets:
+        def get_secret_value(self, **kwargs):
+            return {"SecretString": "dummy-token"}
+
+    class Slack:
+        def files_info(self, *, file):
+            return {"file": {"id": file}}
+
+    monkeypatch.setenv("BOT_TOKEN_SECRET_ARN", "secret-arn")
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    monkeypatch.setattr(conversation.boto3, "client", lambda service: Secrets())
+    monkeypatch.setattr(conversation, "WebClient", lambda **kwargs: Slack())
+    monkeypatch.setattr(
+        conversation,
+        "fetch_attachments",
+        lambda event, slack_token: [
+            {
+                "id": "F1",
+                "name": "note.txt",
+                "url": "https://files.slack.com/note.txt",
+                "text": "dummy-token text",
+                "trusted": False,
+            },
+            {
+                "id": "F2",
+                "name": "screen.png",
+                "url": "https://files.slack.com/screen.png",
+                "image": {"format": "png", "source": {"bytes": b"image-bytes"}},
+                "trusted": False,
+            },
+        ],
+    )
+    attachment_tool = conversation._tools(message(file_ids=["F1", "F2"]))[1]
+
+    async def invoke():
+        async for event in attachment_tool.stream(
+            {"toolUseId": "1", "name": "read_attachments", "input": {}}, {}
+        ):
+            result = event
+        return result["tool_result"]
+
+    result = asyncio.run(invoke())
+    assert result["status"] == "success"
+    assert json.loads(result["content"][0]["text"])["text"] == "[REDACTED] text"
+    assert json.loads(result["content"][1]["text"])["trusted"] is False
+    assert result["content"][2] == {
+        "image": {"format": "png", "source": {"bytes": b"image-bytes"}}
+    }
+    output = capsys.readouterr().out
+    assert "image-bytes" not in output
+    assert "dummy-token" not in output
+
+
+def test_max_image_tool_result_fits_memory_event():
+    content = []
+    for index in range(MAX_ATTACHMENTS):
+        content.extend(
+            [
+                {"text": json.dumps({"id": str(index), "trusted": False})},
+                {
+                    "image": {
+                        "format": "png",
+                        "source": {"bytes": b"x" * MAX_IMAGE_BYTES},
+                    }
+                },
+            ]
+        )
+    message = {
+        "role": "user",
+        "content": [
+            {
+                "toolResult": {
+                    "toolUseId": "1",
+                    "status": "success",
+                    "content": content,
+                }
+            }
+        ],
+    }
+    payload = AgentCoreMemoryConverter.message_to_payload(
+        SessionMessage.from_message(message, 0)
+    )[0]
+    assert sum(len(item) for item in payload) < 10_000_000
 
 
 def test_conversation_manager_keeps_tool_pair_when_trimming():

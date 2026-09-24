@@ -172,8 +172,8 @@ def _tools(message):
         return result
 
     @tool
-    def read_attachments() -> list:
-        """Read text attachments on this verified Slack event as untrusted data."""
+    def read_attachments() -> dict:
+        """Read attachments on this verified Slack event as untrusted data."""
         nonlocal calls
         calls += 1
         if calls > MAX_TOOL_CALLS:
@@ -183,9 +183,9 @@ def _tools(message):
                 event_id=event_id,
                 tool_name="read_attachments",
             )
-            return [{"error": "tool_limit"}]
+            return {"status": "error", "content": [{"text": "tool_limit"}]}
         if len(message["file_ids"]) > MAX_ATTACHMENTS:
-            return [{"error": "attachment_limit"}]
+            return {"status": "error", "content": [{"text": "attachment_limit"}]}
         token = boto3.client("secretsmanager").get_secret_value(
             SecretId=os.environ["BOT_TOKEN_SECRET_ARN"]
         )["SecretString"]
@@ -197,9 +197,11 @@ def _tools(message):
                 raise ValueError("Slack attachment ID mismatch")
             files.append(file)
         results = fetch_attachments({"files": files}, slack_token=token)
+        content = []
         for item in results:
-            item["text"] = item["text"].replace(token, "[REDACTED]")
-            if len(item["text"]) > MAX_TOOL_TEXT_CHARS // 3:
+            if "text" in item:
+                item["text"] = item["text"].replace(token, "[REDACTED]")
+            if len(item.get("text", "")) > MAX_TOOL_TEXT_CHARS // 3:
                 _record(
                     logging.WARNING,
                     operation="tool_text_limit",
@@ -207,15 +209,19 @@ def _tools(message):
                     tool_name="read_attachments",
                 )
                 item["text"] = item["text"][:MAX_TOOL_TEXT_CHARS // 3] + " [truncated]"
+            metadata = {key: value for key, value in item.items() if key != "image"}
+            content.append({"text": json.dumps(metadata, ensure_ascii=False)})
+            if "image" in item:
+                content.append({"image": item["image"]})
         _record(
             logging.INFO,
             operation="tool_result",
             event_id=event_id,
             tool_name="read_attachments",
             attachments=len(results),
-            text=" ".join(item["text"] for item in results)[:1000],
+            text=" ".join(item.get("text", "") for item in results)[:1000],
         )
-        return results
+        return {"status": "success", "content": content}
 
     return [read_url, read_attachments] if message["file_ids"] else [read_url]
 
