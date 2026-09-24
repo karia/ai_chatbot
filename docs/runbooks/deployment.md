@@ -82,6 +82,14 @@ Environmentを指定した標準subjectにはブランチ情報が含まれな�
 設定はリポジトリ内で発行されるOIDCトークン全体に適用される。
 詳しくは[GitHubのOIDC subjectカスタマイズ](https://docs.github.com/en/actions/reference/security/oidc#customizing-the-subject-claims-for-an-organization-or-repository)を参照する。
 
+## 既存環境へのDiscord追加
+
+この変更をmainへマージする前に、Secrets Managerへ`ai-chatbot-dev/discord-bot-token`を作成する。
+その後、管理者のAWS認証情報でこのブランチのTerraformをdevへ適用する。
+デプロイロールは自身のポリシーとアプリ用ロールの権限境界を更新できないため、管理者による適用が必要になる。
+
+prodへデプロイする前にも`ai-chatbot-prod/discord-bot-token`を作成し、同じ手順でTerraformをprodへ適用する。
+
 ## デプロイ権限
 
 ロールごとの操作範囲は次のとおり。
