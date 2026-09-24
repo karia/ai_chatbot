@@ -78,8 +78,13 @@ class QueueSender:
         self.queue_url = queue_url
         self.exit_process = exit_process
         self.failures = 0
+        self.lock = asyncio.Lock()
 
     async def send(self, message):
+        async with self.lock:
+            return await self._send(message)
+
+    async def _send(self, message):
         group_id, deduplication_id = queue_ids(message)
         try:
             result = await asyncio.to_thread(

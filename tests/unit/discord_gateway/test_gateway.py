@@ -114,3 +114,33 @@ def test_queue_sender_exits_after_three_consecutive_failures_and_resets_on_succe
     assert exit_codes == [1]
     logs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert logs[-1]["state"] == "send_failure_limit"
+
+
+def test_queue_sender_preserves_gateway_receive_order(monkeypatch):
+    order = []
+
+    async def scenario():
+        release_first = asyncio.Event()
+
+        async def to_thread(_operation, **kwargs):
+            event_id = json.loads(kwargs["MessageBody"])["event_id"]
+            order.append(event_id)
+            if event_id == "500":
+                await release_first.wait()
+            return {"MessageId": event_id}
+
+        monkeypatch.setattr(asyncio, "to_thread", to_thread)
+        sender = QueueSender(SimpleNamespace(send_message=lambda **_kwargs: None), "queue-url")
+        first = to_queue_message(message(id=500), BOT_ID, 1_234)
+        second = to_queue_message(message(id=501), BOT_ID, 1_235)
+
+        first_task = asyncio.create_task(sender.send(first))
+        await asyncio.sleep(0)
+        second_task = asyncio.create_task(sender.send(second))
+        await asyncio.sleep(0)
+        assert order == ["500"]
+        release_first.set()
+        await asyncio.gather(first_task, second_task)
+
+    asyncio.run(scenario())
+    assert order == ["500", "501"]
