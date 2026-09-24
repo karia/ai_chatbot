@@ -122,6 +122,11 @@ def test_ingress_output_matches_worker_contract(message):
     assert process(sqs(ingress_message), Context(), Store(), Adapter()) == "completed"
 
 
+def test_slack_v1_message_keeps_existing_thread_identity(message):
+    assert validate(sqs(message)) == message
+    assert pipeline._thread_hash(message) == "aae693b5cd46d3b4071c2a0aa2ae9ac00d57a036ca34e9ee44d5e93f0ab6ec8c"
+
+
 @pytest.mark.parametrize(
     "change",
     [

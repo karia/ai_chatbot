@@ -51,6 +51,15 @@ def test_acquire_is_atomic_and_excludes_competitors(state):
     assert store.get_event("T", "E")["owner"] == "two"
 
 
+def test_slack_keys_remain_byte_for_byte_compatible(state):
+    store, table, now = state
+    event = acquire(store)
+    assert event["pk"] == "EVENT#T#E"
+    assert event["session_pk"] == "SESSION#thread"
+    store.reserve_post("T", "C")
+    assert table.get_item(Key={"pk": "RATE#T#C"})["Item"]["pk"] == "RATE#T#C"
+
+
 @pytest.mark.parametrize("remaining_ms", [300_000, 900_000, 300_001])
 def test_lease_exceeds_remaining_lambda_time(state, remaining_ms):
     store, table, now = state

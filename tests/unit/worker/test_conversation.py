@@ -206,6 +206,15 @@ def test_ids_share_thread_across_users_and_isolate_channels(monkeypatch):
     assert all(len(value) == 64 for value in first)
 
 
+def test_slack_memory_ids_remain_byte_for_byte_compatible(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "dev")
+
+    assert conversation.memory_ids(message()) == (
+        "093e3a18caa24e05f85e5ed41258134d65fd9196b416531c4b0d4431fa5a7f06",
+        "dc83085f467387c9414dba4c2218853f77c929e68f1f19a2d66ad4435550230d",
+    )
+
+
 @pytest.mark.parametrize("model_id", ["global.anthropic.claude-opus-5", "custom.model"])
 def test_generate_confirms_memory_save_and_uses_budgets(monkeypatch, model_id):
     calls = []
