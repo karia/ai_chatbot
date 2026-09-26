@@ -64,7 +64,7 @@ resource "aws_iam_policy" "runtime_boundary" {
       {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
-        Resource = "${format(local.regional_arn, "secretsmanager")}:secret:${local.prefix}/slack-*"
+        Resource = [for name in ["slack", "discord"] : "${format(local.regional_arn, "secretsmanager")}:secret:${local.prefix}/${name}-bot-token-*"]
       },
       {
         Effect   = "Allow"
@@ -196,7 +196,7 @@ resource "aws_iam_role_policy" "deploy" {
       {
         Effect   = "Allow"
         Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
-        Resource = "${format(local.regional_arn, "secretsmanager")}:secret:${local.prefix}/slack-*"
+        Resource = [for name in ["slack", "discord"] : "${format(local.regional_arn, "secretsmanager")}:secret:${local.prefix}/${name}-bot-token-*"]
       },
       {
         Effect    = "Allow"

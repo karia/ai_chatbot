@@ -51,6 +51,30 @@ def test_acquire_is_atomic_and_excludes_competitors(state):
     assert store.get_event("T", "E")["owner"] == "two"
 
 
+def test_slack_keys_remain_byte_for_byte_compatible(state):
+    store, table, now = state
+    event = acquire(store)
+    assert event["pk"] == "EVENT#T#E"
+    assert event["session_pk"] == "SESSION#thread"
+    store.reserve_post("T", "C")
+    assert table.get_item(Key={"pk": "RATE#T#C"})["Item"]["pk"] == "RATE#T#C"
+
+
+def test_discord_keys_do_not_collide_with_equal_slack_ids(state):
+    store, table, now = state
+    slack = acquire(store)
+    discord = store.acquire(
+        "T", "E", "thread", "one", received_at=1000, remaining_ms=300_000,
+        platform="discord",
+    )
+    store.reserve_post("T", "C", platform="discord")
+
+    assert discord["pk"] == "EVENT#discord#T#E"
+    assert discord["session_pk"] == "SESSION#discord#thread"
+    assert table.get_item(Key={"pk": "RATE#discord#T#C"})["Item"]
+    assert slack["pk"] == "EVENT#T#E"
+
+
 @pytest.mark.parametrize("remaining_ms", [300_000, 900_000, 300_001])
 def test_lease_exceeds_remaining_lambda_time(state, remaining_ms):
     store, table, now = state

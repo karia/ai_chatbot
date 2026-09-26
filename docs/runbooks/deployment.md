@@ -10,6 +10,8 @@ Terraformがインフラを管理し、lambrollがLambdaの公開バージョン
 ### AWSとTerraform
 
 管理者のAWS認証情報を使い、[Terraformの初期設定](../../terraform/README.md)に従って既存のS3バックエンドとSecrets Managerを準備する。
+Terraformを適用する前に、Secrets Managerへ`ai-chatbot-<env>/discord-bot-token`を作成し、Discord Developer Portalで発行したBot TokenをプレーンテキストのSecretStringとして登録する。
+Secretはdevとprodに個別に作成し、値をTerraformやGitHub Secretsへ登録しない。
 環境ごとのstate keyは`ai-chatbot/<env>/terraform.tfstate`とし、Terraform workspaceは`default`を使う。
 バケット名はgit管理外の`terraform/<env>.tfbackend`と環境変数`TF_VAR_state_bucket`へ設定する。
 両方に同じ名前を指定する。
@@ -79,6 +81,14 @@ Environmentを指定した標準subjectにはブランチ情報が含まれな�
 このカスタマイズで、リポジトリ、環境、`refs/heads/main`、`push`または`workflow_dispatch`をIAMの`StringEquals`で照合する。
 設定はリポジトリ内で発行されるOIDCトークン全体に適用される。
 詳しくは[GitHubのOIDC subjectカスタマイズ](https://docs.github.com/en/actions/reference/security/oidc#customizing-the-subject-claims-for-an-organization-or-repository)を参照する。
+
+## 既存環境へのDiscord追加
+
+この変更をmainへマージする前に、Secrets Managerへ`ai-chatbot-dev/discord-bot-token`を作成する。
+その後、管理者のAWS認証情報でこのブランチのTerraformをdevへ適用する。
+デプロイロールは自身のポリシーとアプリ用ロールの権限境界を更新できないため、管理者による適用が必要になる。
+
+prodへデプロイする前にも`ai-chatbot-prod/discord-bot-token`を作成し、同じ手順でTerraformをprodへ適用する。
 
 ## デプロイ権限
 

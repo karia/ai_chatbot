@@ -6,11 +6,13 @@ import time
 
 if __package__:
     from .conversation import MAX_ANSWERS_PER_THREAD, generate
+    from .discord_reply import DiscordReplyAdapter, PermanentDiscordError
     from .observability import emit
     from .slack_reply import PermanentSlackError, SlackReplyAdapter
     from .store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
 else:
     from conversation import MAX_ANSWERS_PER_THREAD, generate
+    from discord_reply import DiscordReplyAdapter, PermanentDiscordError
     from observability import emit
     from slack_reply import PermanentSlackError, SlackReplyAdapter
     from store import Conflict, EventExpired, SessionBusy, SessionStopped, Store
@@ -30,6 +32,18 @@ MESSAGE_FIELDS = {
     "message_ts",
     "text",
     "file_ids",
+    "received_at",
+}
+DISCORD_MESSAGE_FIELDS = {
+    "schema_version",
+    "platform",
+    "event_id",
+    "guild_id",
+    "channel_id",
+    "conversation_id",
+    "create_thread",
+    "user_id",
+    "text",
     "received_at",
 }
 
@@ -62,6 +76,13 @@ def _timestamp(value):
     return value
 
 
+def _snowflake(value):
+    value = _string(value)
+    if not value.isascii() or not value.isdigit():
+        raise InvalidMessage("Invalid Discord snowflake")
+    return value
+
+
 def validate(event):
     try:
         records = event["Records"]
@@ -71,10 +92,31 @@ def validate(event):
         if not isinstance(body, str) or len(body.encode("utf-8")) > MAX_MESSAGE_BYTES:
             raise InvalidMessage("Invalid SQS body")
         message = json.loads(body)
-        if not isinstance(message, dict) or not MESSAGE_FIELDS <= message.keys():
+        if not isinstance(message, dict):
             raise InvalidMessage("Invalid message fields")
         if type(message["schema_version"]) is not int or message["schema_version"] != 1:
             raise InvalidMessage("Invalid schema version")
+        if message.get("platform", "slack") == "discord":
+            if not DISCORD_MESSAGE_FIELDS <= message.keys():
+                raise InvalidMessage("Invalid Discord message fields")
+            for field in (
+                "event_id", "guild_id", "channel_id", "conversation_id", "user_id"
+            ):
+                _snowflake(message[field])
+            if type(message["create_thread"]) is not bool:
+                raise InvalidMessage("Invalid thread creation flag")
+            expected_conversation = (
+                message["event_id"] if message["create_thread"] else message["channel_id"]
+            )
+            if message["conversation_id"] != expected_conversation:
+                raise InvalidMessage("Invalid Discord conversation")
+            if not isinstance(message["text"], str):
+                raise InvalidMessage("Invalid message text")
+            if type(message["received_at"]) is not int or message["received_at"] < 0:
+                raise InvalidMessage("Invalid receipt time")
+            return message
+        if message.get("platform", "slack") != "slack" or not MESSAGE_FIELDS <= message.keys():
+            raise InvalidMessage("Invalid message fields")
         for field in (
             "event_id",
             "team_id",
@@ -99,11 +141,12 @@ def validate(event):
 
 
 def _thread_hash(message):
-    value = json.dumps(
-        [message["team_id"], message["channel_id"], message["thread_ts"]],
-        ensure_ascii=False,
-        separators=(",", ":"),
+    identity = (
+        ["discord", message["guild_id"], message["conversation_id"]]
+        if message.get("platform", "slack") == "discord"
+        else [message["team_id"], message["channel_id"], message["thread_ts"]]
     )
+    value = json.dumps(identity, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(value.encode()).hexdigest()
 
 
@@ -114,7 +157,13 @@ def _stage(name, event_id, context, operation):
     started = time.monotonic()
     try:
         result = operation()
-    except (EventExpired, PermanentSlackError, SessionBusy, SessionStopped):
+    except (
+        EventExpired,
+        PermanentDiscordError,
+        PermanentSlackError,
+        SessionBusy,
+        SessionStopped,
+    ):
         raise
     except Exception as error:
         _log(
@@ -151,6 +200,8 @@ def process(event, context, store=None, adapter=None):
         )
         return "isolated"
     event_id = message["event_id"]
+    platform = message.get("platform", "slack")
+    team_id = message.get("guild_id", message.get("team_id"))
     _log(
         logging.INFO,
         "stage_completed",
@@ -165,12 +216,13 @@ def process(event, context, store=None, adapter=None):
             event_id,
             context,
             lambda: store.acquire(
-                message["team_id"],
+                team_id,
                 event_id,
                 _thread_hash(message),
                 context.aws_request_id,
                 received_at=message["received_at"],
                 remaining_ms=context.get_remaining_time_in_millis(),
+                platform=platform,
             ),
         )
     except SessionStopped:
@@ -219,19 +271,26 @@ def process(event, context, store=None, adapter=None):
     elif saved["status"] not in {"GENERATED", "POSTING"}:
         raise Conflict("Unknown event status")
     try:
-        _stage(
-            "send",
-            event_id,
-            context,
-            lambda: (adapter or SlackReplyAdapter(store=store)).send(
+        if platform == "discord":
+            send = lambda: (adapter or DiscordReplyAdapter(store=store)).send(
                 saved,
-                message["team_id"],
+                team_id,
+                message["channel_id"],
+                message["conversation_id"],
+                context,
+                source_message_id=message["event_id"],
+                create_thread=message["create_thread"],
+            )
+        else:
+            send = lambda: (adapter or SlackReplyAdapter(store=store)).send(
+                saved,
+                team_id,
                 message["channel_id"],
                 message["thread_ts"],
                 context,
-            ),
-        )
-    except PermanentSlackError:
+            )
+        _stage("send", event_id, context, send)
+    except (PermanentDiscordError, PermanentSlackError):
         _log(logging.ERROR, "delivery_isolated", event_id)
         return "isolated"
     _log(

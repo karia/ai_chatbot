@@ -65,10 +65,12 @@ class Adapter:
     def __init__(self, error=None):
         self.error = error
         self.calls = []
+        self.kwargs = []
         self.event = None
 
-    def send(self, event, team, channel, thread_ts, context):
+    def send(self, event, team, channel, thread_ts, context, **kwargs):
         self.calls.append((event, team, channel, thread_ts))
+        self.kwargs.append(kwargs)
         if self.error:
             if isinstance(self.error, PermanentSlackError):
                 self.event = {**event, "status": "NEEDS_REVIEW"}
@@ -90,6 +92,22 @@ def message():
         "message_ts": "1800000000.000002",
         "text": "hello",
         "file_ids": ["FTEST"],
+        "received_at": 1_800_000_000,
+    }
+
+
+@pytest.fixture
+def discord_message():
+    return {
+        "schema_version": 1,
+        "platform": "discord",
+        "event_id": "180000000000000001",
+        "guild_id": "180000000000000002",
+        "channel_id": "180000000000000003",
+        "conversation_id": "180000000000000001",
+        "create_thread": True,
+        "user_id": "180000000000000004",
+        "text": "hello",
         "received_at": 1_800_000_000,
     }
 
@@ -120,6 +138,65 @@ def test_ingress_output_matches_worker_contract(message):
 
     assert set(ingress_message) == MESSAGE_FIELDS
     assert process(sqs(ingress_message), Context(), Store(), Adapter()) == "completed"
+
+
+def test_slack_v1_message_keeps_existing_thread_identity(message):
+    assert validate(sqs(message)) == message
+    assert pipeline._thread_hash(message) == "aae693b5cd46d3b4071c2a0aa2ae9ac00d57a036ca34e9ee44d5e93f0ab6ec8c"
+
+
+def test_discord_message_validates_and_maps_source_message_to_thread(discord_message):
+    assert validate(sqs(discord_message)) == discord_message
+    continued = {
+        **discord_message,
+        "event_id": "180000000000000005",
+        "channel_id": discord_message["conversation_id"],
+        "create_thread": False,
+    }
+    assert pipeline._thread_hash(discord_message) == pipeline._thread_hash(continued)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda value: value.pop("guild_id"),
+        lambda value: value.update(platform="matrix"),
+        lambda value: value.update(event_id="not-a-snowflake"),
+        lambda value: value.update(create_thread=1),
+        lambda value: value.update(conversation_id="180000000000000099"),
+    ],
+)
+def test_invalid_discord_messages_are_isolated(discord_message, change):
+    change(discord_message)
+    store = Store()
+
+    assert process(sqs(discord_message), Context(), store, Adapter()) == "isolated"
+    assert store.calls == []
+
+
+def test_discord_process_uses_namespaced_store_and_discord_adapter(
+    discord_message, monkeypatch
+):
+    store = Store()
+    adapter = Adapter()
+    monkeypatch.setattr(pipeline, "DiscordReplyAdapter", lambda **kwargs: adapter)
+
+    assert process(sqs(discord_message), Context(), store) == "completed"
+    acquire = store.calls[0]
+    assert acquire[1][:2] == (
+        discord_message["guild_id"],
+        discord_message["event_id"],
+    )
+    assert acquire[2]["platform"] == "discord"
+    assert adapter.calls[0][1:] == (
+        discord_message["guild_id"],
+        discord_message["channel_id"],
+        discord_message["conversation_id"],
+    )
+    assert adapter.kwargs == [{
+        "source_message_id": discord_message["event_id"],
+        "create_thread": True,
+    }]
 
 
 @pytest.mark.parametrize(

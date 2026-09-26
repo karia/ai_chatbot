@@ -47,6 +47,10 @@ def _now():
     return Decimal(str(time.time()))
 
 
+def _key_part(platform, value):
+    return value if platform == "slack" else f"{platform}#{value}"
+
+
 def _log(level, operation, item=None, **fields):
     record = {"operation": operation, **fields}
     record.setdefault("correlation_id", (item or {}).get("pk", "").rsplit("#", 1)[-1] or "unknown")
@@ -72,12 +76,12 @@ class Store:
             return None
         return {key: TypeDeserializer().deserialize(value) for key, value in item.items()}
 
-    def get_event(self, team, event):
-        item = self._get(f"EVENT#{team}#{event}")
+    def get_event(self, team, event, *, platform="slack"):
+        item = self._get(f"EVENT#{_key_part(platform, team)}#{event}")
         return item if item and item["expires_at"] > _now() else None
 
-    def get_session(self, thread_hash):
-        return self._get(f"SESSION#{thread_hash}")
+    def get_session(self, thread_hash, *, platform="slack"):
+        return self._get(f"SESSION#{_key_part(platform, thread_hash)}")
 
     def _put(self, item, previous, *, owned=False):
         """Check owner/attempt alongside revision matching as defense in depth."""
@@ -131,7 +135,10 @@ class Store:
         _log(level, "state_written", item)
         return item
 
-    def acquire(self, team, event, thread_hash, owner, *, received_at, remaining_ms):
+    def acquire(
+        self, team, event, thread_hash, owner, *, received_at, remaining_ms,
+        platform="slack",
+    ):
         """Use the original receipt time on every delivery; never renew event TTL.
 
         COMPLETED is returned unchanged. Other returned states have a new lease;
@@ -141,12 +148,13 @@ class Store:
         expires_at = int(received_at) + EVENT_TTL_SECONDS
         if expires_at <= now:
             raise EventExpired()
-        pk = f"EVENT#{team}#{event}"
+        pk = f"EVENT#{_key_part(platform, team)}#{event}"
+        session_pk = f"SESSION#{_key_part(platform, thread_hash)}"
         previous = self._get(pk)
         if previous:
             if previous["expires_at"] <= now:
                 raise EventExpired()
-            if previous["session_pk"] != f"SESSION#{thread_hash}":
+            if previous["session_pk"] != session_pk:
                 raise Conflict("Event belongs to another session")
             if previous["status"] == "COMPLETED":
                 return previous
@@ -154,14 +162,14 @@ class Store:
                 previous["lease_until"], previous.get("retry_at", 0)
             ) > now:
                 raise Conflict("Event is unavailable")
-        session = self.get_session(thread_hash)
+        session = self.get_session(thread_hash, platform=platform)
         if session:
             if session.get("stop_reason"):
                 raise SessionStopped("Session is stopped")
             if session.get("active_event_id") not in (None, pk):
                 raise SessionBusy("Session is busy")
         updated_session = {
-            **(session or {"pk": f"SESSION#{thread_hash}", "answer_count": 0}),
+            **(session or {"pk": session_pk, "answer_count": 0}),
             "active_event_id": pk,
             "updated_at": now,
         }
@@ -198,9 +206,9 @@ class Store:
             updated_session["stop_reason"] = fields["failure"]
         return self._write(event_write, self._put(updated_session, session))
 
-    def bind_memory(self, thread_hash, memory_session_id):
+    def bind_memory(self, thread_hash, memory_session_id, *, platform="slack"):
         """Set the Memory mapping once while preserving session controls."""
-        session = self.get_session(thread_hash)
+        session = self.get_session(thread_hash, platform=platform)
         if not session or session.get("memory_session_id", memory_session_id) != memory_session_id:
             raise Conflict("Memory mapping is unavailable")
         updated = {
@@ -245,7 +253,7 @@ class Store:
             slack_parts=parts or [{"end": end} for end in splits],
         )
 
-    def start_post(self, event, index, team, channel):
+    def start_post(self, event, index, team, channel, *, platform="slack"):
         if event["status"] != "POSTING" or "posting_part" in event:
             raise Conflict("A Slack post is already in progress")
         pending = next(
@@ -255,7 +263,7 @@ class Store:
         if index != pending:
             raise Conflict("Slack posts must be saved in order")
         updated_event = {**event, "posting_part": index}
-        rate_write, _ = self._post_slot(team, channel)
+        rate_write, _ = self._post_slot(team, channel, platform=platform)
         return self._write(
             self._put(updated_event, event, owned=True),
             rate_write,
@@ -293,17 +301,17 @@ class Store:
             event, "NEEDS_REVIEW", {"RUNNING", "GENERATED", "POSTING"}, failure=failure
         )
 
-    def _post_slot(self, team, channel):
+    def _post_slot(self, team, channel, *, platform="slack"):
         now = _now()
-        pk = f"RATE#{team}#{channel}"
+        pk = f"RATE#{_key_part(platform, team)}#{channel}"
         previous = self._get(pk)
         if previous and previous["next_post_at"] > now:
             raise PostingSlotUnavailable(previous["next_post_at"])
         next_post_at = now + 1
         return self._put({"pk": pk, "next_post_at": next_post_at}, previous), next_post_at
 
-    def reserve_post(self, team, channel):
+    def reserve_post(self, team, channel, *, platform="slack"):
         """Reserve one second immediately; a conflict must be retried later."""
-        write, next_post_at = self._post_slot(team, channel)
+        write, next_post_at = self._post_slot(team, channel, platform=platform)
         self._write(write)
         return next_post_at

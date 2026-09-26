@@ -66,6 +66,16 @@ run "deployment_contract" {
   }
 
   assert {
+    condition = (
+      strcontains(aws_iam_policy.runtime_boundary.policy, "/slack-bot-token") &&
+      strcontains(aws_iam_policy.runtime_boundary.policy, "/discord-bot-token") &&
+      strcontains(aws_iam_role_policy.deploy.policy, "/slack-bot-token") &&
+      strcontains(aws_iam_role_policy.deploy.policy, "/discord-bot-token")
+    )
+    error_message = "Runtime may read both bot tokens and deployment may read their metadata."
+  }
+
+  assert {
     condition = alltrue([
       for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement :
       !contains(try(tolist(statement.Resource), [statement.Resource]), aws_iam_role.deploy.arn) ||
