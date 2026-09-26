@@ -20,6 +20,7 @@ else
 fi
 
 pip install -r src/worker/requirements.txt
+pip install -r src/discord_gateway/requirements.txt
 
 # AWSクライアントをローカルで初期化するためのダミー値
 export DYNAMODB_TABLE_NAME="test-table"
