@@ -49,7 +49,7 @@ PR 3は、IAM Roles Anywhereで短期資格情報を取得できることを最�
 | ファイル | 変更 |
 | --- | --- |
 | `src/discord_gateway/` | 新規。Gatewayへの接続、許可範囲とメンションの選別、PR 1で決めた形でのキュー投入 |
-| `src/discord_gateway/Dockerfile` | 新規。arm64のイメージ |
+| `src/discord_gateway/Dockerfile` | 新規。amd64のイメージ |
 | `.github/workflows/` | イメージをビルドしてghcrへpushするワークフロー |
 | `tests/unit/discord_gateway/` | 選別とキューメッセージへの変換のテスト |
 | `run_tests.sh`、`requirements-dev.txt` | 新しいテストを既存のテスト実行に含める |
