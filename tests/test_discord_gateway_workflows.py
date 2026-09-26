@@ -28,8 +28,17 @@ def test_image_workflow_builds_pull_requests_without_pushing():
     assert triggers["pull_request"]["paths"] == expected_paths
     assert triggers["push"]["paths"] == expected_paths
 
-    steps = document["jobs"]["build"]["steps"]
+    job = document["jobs"]["build"]
+    assert job["runs-on"] == "ubuntu-latest"
+    steps = job["steps"]
     login = next(step for step in steps if "login-action" in step.get("uses", ""))
     build = next(step for step in steps if "build-push-action" in step.get("uses", ""))
     assert login["if"] == "github.event_name == 'push'"
+    assert build["with"]["platforms"] == "linux/amd64"
     assert build["with"]["push"] == "${{ github.event_name == 'push' }}"
+
+
+def test_gateway_requirements_target_amd64():
+    requirements = Path("src/discord_gateway/requirements.txt").read_text()
+
+    assert "--python-platform x86_64-manylinux_2_28" in requirements
