@@ -310,8 +310,55 @@ def test_allowed_text_attachments(transport, mime):
 
 
 @pytest.mark.parametrize(
+    ("mime", "image_format"),
+    [
+        ("image/png", "png"),
+        ("image/jpeg", "jpeg"),
+        ("image/gif", "gif"),
+        ("image/webp", "webp"),
+    ],
+)
+def test_allowed_image_attachments(transport, mime, image_format):
+    transport.responses = [{"type": mime, "chunks": [b"image-bytes"]}]
+    result = attachments.fetch_attachments(
+        {"files": [attachment(mimetype=mime)]}, slack_token="dummy-token"
+    )
+    assert result == [
+        {
+            "id": "F-example",
+            "name": "note.txt",
+            "url": "https://files.slack.com/files-pri/example/note.txt",
+            "trusted": False,
+            "image": {
+                "format": image_format,
+                "source": {"bytes": b"image-bytes"},
+            },
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "size,accepted",
+    [
+        (attachments.MAX_IMAGE_BYTES, True),
+        (attachments.MAX_IMAGE_BYTES + 1, False),
+    ],
+)
+def test_image_size_limit(transport, size, accepted):
+    transport.responses = [{"type": "image/png", "chunks": [b"x" * size]}]
+    operation = lambda: attachments.fetch_attachments(
+        {"files": [attachment(mimetype="image/png")]}, slack_token="dummy-token"
+    )
+    if accepted:
+        assert len(operation()[0]["image"]["source"]["bytes"]) == size
+    else:
+        with pytest.raises(url.FetchError, match="size_limit"):
+            operation()
+
+
+@pytest.mark.parametrize(
     "mime",
-    ["image/png", "application/pdf", "text/html", "application/octet-stream", ""],
+    ["application/pdf", "text/html", "application/octet-stream", ""],
 )
 def test_attachment_metadata_types_are_checked_before_fetch(transport, mime):
     with pytest.raises(url.FetchError, match="unsupported_type"):

@@ -64,7 +64,9 @@ def _public_address(address):
     return True
 
 
-def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
+def _fetch(
+    target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES, max_bytes=MAX_BYTES
+):
     started = time.monotonic()
     deadline = started + TIMEOUT_SECONDS
     size = 0
@@ -110,7 +112,7 @@ def _fetch(target, *, slack_token=None, allowed_types=TEXT_TYPES | HTML_TYPES):
             def write(chunk, body=body):
                 nonlocal size, callback_reason
                 size += len(chunk)
-                if size > MAX_BYTES:
+                if size > max_bytes:
                     callback_reason = "size_limit"
                     return 0
                 if time.monotonic() >= deadline:
