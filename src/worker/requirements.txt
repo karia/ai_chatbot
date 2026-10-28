@@ -28,7 +28,7 @@ botocore==1.43.89
     #   boto3
     #   s3transfer
     #   strands-agents
-certifi==2026.7.22
+certifi==2026.10.23
     # via
     #   httpcore
     #   httpx
@@ -70,20 +70,20 @@ mcp==1.30.0
     # via
     #   bedrock-agentcore
     #   strands-agents
-opentelemetry-api==1.44.0
+opentelemetry-api==1.45.1
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-threading
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   strands-agents
-opentelemetry-instrumentation==0.65b0
+opentelemetry-instrumentation==0.66b1
     # via opentelemetry-instrumentation-threading
-opentelemetry-instrumentation-threading==0.65b0
+opentelemetry-instrumentation-threading==0.66b1
     # via strands-agents
-opentelemetry-sdk==1.44.0
+opentelemetry-sdk==1.45.1
     # via strands-agents
-opentelemetry-semantic-conventions==0.65b0
+opentelemetry-semantic-conventions==0.66b1
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
@@ -103,7 +103,7 @@ pydantic-core==2.46.5
     # via pydantic
 pydantic-settings==2.15.0
     # via mcp
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via mcp
 python-dateutil==2.9.0.post0
     # via botocore
@@ -158,7 +158,7 @@ typing-inspection==0.4.4
     #   mcp
     #   pydantic
     #   pydantic-settings
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   bedrock-agentcore
     #   botocore
