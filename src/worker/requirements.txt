@@ -70,7 +70,7 @@ mcp==1.30.0
     # via
     #   bedrock-agentcore
     #   strands-agents
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-threading
@@ -81,9 +81,9 @@ opentelemetry-instrumentation==0.66b1
     # via opentelemetry-instrumentation-threading
 opentelemetry-instrumentation-threading==0.66b1
     # via strands-agents
-opentelemetry-sdk==1.45.1
+opentelemetry-sdk==1.45.2
     # via strands-agents
-opentelemetry-semantic-conventions==0.66b1
+opentelemetry-semantic-conventions==0.66b2
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
