@@ -109,7 +109,7 @@ python-dateutil==2.9.0.post0
     # via botocore
 python-dotenv==1.2.3
     # via pydantic-settings
-python-multipart==0.0.32
+python-multipart==0.0.34
     # via mcp
 pyyaml==6.0.3
     # via strands-agents
